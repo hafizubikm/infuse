@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import AVFoundation
 import Observation
 
@@ -36,6 +36,7 @@ final class PlaybackController {
     @ObservationIgnored private let sleepAssertion = DisplaySleepAssertion()
     @ObservationIgnored private var lastScrubSeek = Date.distantPast
     @ObservationIgnored private var wantsPlay = true
+    @ObservationIgnored private var volumeObservers: [NSObjectProtocol] = []
 
     var isPlaying: Bool { status == .playing }
     var displayedTime: Double { scrubPosition ?? currentTime }
@@ -50,6 +51,7 @@ final class PlaybackController {
         engine.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
         }
+        observeVolumeUnmounts()
     }
 
     func open(startAt: Double = 0, autoplay: Bool = true) {
@@ -126,7 +128,33 @@ final class PlaybackController {
 
     func close() {
         sleepAssertion.release()
+        volumeObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
+        volumeObservers.removeAll()
         engine.close()
+    }
+
+    /// When the drive holding the file is ejected or unplugged: release the file (so the eject
+    /// isn't blocked by "in use") and say what happened instead of failing with a read error.
+    private func observeVolumeUnmounts() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willUnmountNotification, NSWorkspace.didUnmountNotification] {
+            volumeObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                guard let volume = note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
+                MainActor.assumeIsolated { self?.volumeWillDisappear(volume) }
+            })
+        }
+    }
+
+    private func volumeWillDisappear(_ volume: URL) {
+        let volumePath = volume.standardizedFileURL.path
+        let filePath = url.standardizedFileURL.path
+        guard volumePath != "/", filePath.hasPrefix(volumePath.hasSuffix("/") ? volumePath : volumePath + "/") else { return }
+        if case .failed = status { return }
+        Log.playback.notice("Volume \(volumePath, privacy: .public) is going away; closing \(self.url.lastPathComponent, privacy: .public)")
+        sleepAssertion.release()
+        engine.close()
+        status = .failed("The drive “\(volume.lastPathComponent)” was disconnected. Reconnect it and open the file again.")
+        isBuffering = false
     }
 
     // MARK: - Engine events
