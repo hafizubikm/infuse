@@ -80,6 +80,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        (window?.contentView as? PlayerView)?.tearDown()
         controller.close()
         if Self.current === self { Self.current = nil }
     }

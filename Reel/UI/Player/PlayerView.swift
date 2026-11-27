@@ -2,14 +2,18 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-/// Hosts the video layer (and later the subtitle layer) with the SwiftUI controls on top.
+/// Hosts the video layer and the subtitle overlay layer, with the SwiftUI controls on top.
 /// Tracks the mouse to show/hide the controls and cursor.
 final class PlayerView: NSView {
     let controller: PlaybackController
     let ui: PlayerUIState
     private let videoLayer: AVSampleBufferDisplayLayer
+    private let subtitleLayer = SubtitleLayer()
     private var hostingView: NSHostingView<ControlsOverlay>!
     private var hideTimer: Timer?
+    private var displayLink: CADisplayLink?
+    private var lastPrune = Date()
+    private var laidOutVideoSize: CGSize?
 
     init(controller: PlaybackController, ui: PlayerUIState) {
         self.controller = controller
@@ -21,6 +25,7 @@ final class PlayerView: NSView {
         videoLayer.frame = bounds
         videoLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         layer?.addSublayer(videoLayer)
+        layer?.addSublayer(subtitleLayer)
 
         hostingView = NSHostingView(rootView: ControlsOverlay(controller: controller, ui: ui))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -32,6 +37,39 @@ final class PlayerView: NSView {
             hostingView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
         ui.onActivity = { [weak self] in self?.userActivity() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        displayLink?.invalidate()
+        displayLink = nil
+        guard window != nil else { return }
+        // Subtitles are timed against the playback clock every display refresh.
+        let link = displayLink(target: self, selector: #selector(displayRefresh))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        subtitleLayer.contentsScale = window?.backingScaleFactor ?? 2
+    }
+
+    /// Stops the display link (it retains the view); call when the window closes.
+    func tearDown() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    @objc private func displayRefresh() {
+        if laidOutVideoSize != controller.media?.displaySize { needsLayout = true }
+        guard let subtitles = controller.subtitles else { return }
+        let t = controller.preciseTime
+        subtitleLayer.show(subtitles.activeCues(at: t), style: AppSettings.shared.subtitleStyle)
+        if Date().timeIntervalSince(lastPrune) > 10 {
+            lastPrune = Date()
+            subtitles.prune(before: t)
+        }
     }
 
     @available(*, unavailable)
@@ -46,6 +84,9 @@ final class PlayerView: NSView {
         CATransaction.setDisableActions(true)
         videoLayer.frame = bounds
         CATransaction.commit()
+        subtitleLayer.contentsScale = window?.backingScaleFactor ?? 2
+        subtitleLayer.layout(in: bounds, videoSize: controller.media?.displaySize)
+        laidOutVideoSize = controller.media?.displaySize
     }
 
     override func updateTrackingAreas() {

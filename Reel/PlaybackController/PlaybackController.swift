@@ -31,6 +31,13 @@ final class PlaybackController {
     /// What decodes/renders the picture and sound, e.g. "Dolby Vision Profile 8.1 · hardware decode".
     private(set) var videoRenderPath: String?
     private(set) var audioRenderPath: String?
+    /// Subtitle tracks (embedded + external files next to the video) and the one shown.
+    private(set) var subtitleTracks: [SubtitleTrack] = []
+    private(set) var selectedSubtitleID: String?
+    /// Short message shown briefly over the video ("Subtitles: English · SRT").
+    private(set) var toast: String?
+    @ObservationIgnored private(set) var subtitles: SubtitleManager?
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
 
     /// Called once the file is open (e.g. so the window can size itself to the video).
     var onOpened: ((PlaybackEngine.OpenedMedia) -> Void)?
@@ -42,6 +49,9 @@ final class PlaybackController {
     @ObservationIgnored private var volumeObservers: [NSObjectProtocol] = []
 
     var isPlaying: Bool { status == .playing }
+
+    /// The playback clock read directly from the synchronizer (for frame-accurate subtitles).
+    var preciseTime: Double { scrubPosition ?? engine.currentTime }
     var displayedTime: Double { scrubPosition ?? currentTime }
 
     init(url: URL) {
@@ -129,6 +139,44 @@ final class PlaybackController {
         engine.audioRenderer.isMuted = muted
     }
 
+    // MARK: - Subtitles
+
+    @ObservationIgnored private var userChoseSubtitles = false
+
+    /// External files load in the background. One placed next to the video is shown
+    /// automatically unless something else was already selected.
+    private func subtitleTracksChanged() {
+        subtitleTracks = subtitles?.tracks ?? []
+        if selectedSubtitleID == nil, !userChoseSubtitles, let external = subtitleTracks.first(where: \.isExternal) {
+            selectedSubtitleID = external.id
+            subtitles?.select(external.id)
+        }
+    }
+
+    func selectSubtitle(_ id: String?) {
+        userChoseSubtitles = true
+        selectedSubtitleID = id
+        subtitles?.select(id)
+        let title = subtitleTracks.first { $0.id == id }?.menuTitle
+        showToast(title.map { "Subtitles: \($0)" } ?? "Subtitles off")
+    }
+
+    /// S key: off → track 1 → track 2 … → off.
+    func cycleSubtitles() {
+        let ids: [String?] = [nil] + subtitleTracks.map(\.id)
+        let current = ids.firstIndex(where: { $0 == selectedSubtitleID }) ?? 0
+        selectSubtitle(ids[(current + 1) % ids.count])
+    }
+
+    func showToast(_ message: String) {
+        toast = message
+        toastTask?.cancel()
+        toastTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if !Task.isCancelled { self?.toast = nil }
+        }
+    }
+
     func close() {
         sleepAssertion.release()
         volumeObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
@@ -176,6 +224,13 @@ final class PlaybackController {
             duration = media.duration
             videoRenderPath = media.videoRenderPath
             audioRenderPath = media.audioRenderPath
+            subtitles = media.subtitles
+            media.subtitles.onTracksChanged = { [weak self] in
+                Task { @MainActor in self?.subtitleTracksChanged() }
+            }
+            subtitleTracks = media.subtitles.tracks
+            selectedSubtitleID = media.defaultSubtitleID
+            subtitleTracksChanged()
             status = wantsPlay ? .playing : .paused
             updateSleepAssertion()
             onOpened?(media)

@@ -15,6 +15,7 @@ final class PacketQueue: @unchecked Sendable {
     private var bytes = 0
     private var endOfStream = false
     private var availabilityHandlers: [() -> Void] = []
+    private var packetHandlers: [() -> Void] = []
 
     /// Called (outside the lock) whenever a packet is consumed; the demuxer uses it to wake up.
     var onConsumed: (() -> Void)?
@@ -47,7 +48,8 @@ final class PacketQueue: @unchecked Sendable {
         lock.lock()
         packets.append(packet)
         bytes += packet.size
-        let handlers = takeHandlersLocked()
+        let handlers = takeHandlersLocked() + packetHandlers
+        packetHandlers.removeAll()
         lock.unlock()
         handlers.forEach { $0() }
     }
@@ -98,6 +100,19 @@ final class PacketQueue: @unchecked Sendable {
             return
         }
         availabilityHandlers.append(handler)
+        lock.unlock()
+    }
+
+    /// Runs `handler` once, as soon as a packet is available (end of stream does not count).
+    /// Runs it immediately, on the calling thread, if one already is.
+    func whenPacketAvailable(_ handler: @escaping () -> Void) {
+        lock.lock()
+        if head < packets.count {
+            lock.unlock()
+            handler()
+            return
+        }
+        packetHandlers.append(handler)
         lock.unlock()
     }
 

@@ -15,6 +15,18 @@ struct ControlsOverlay: View {
 
             statusOverlay
 
+            if let toast = controller.toast {
+                Text(toast)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.black.opacity(0.7), in: Capsule())
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 28)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             if ui.showInfo {
                 InfoOverlay(controller: controller)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

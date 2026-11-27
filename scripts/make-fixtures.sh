@@ -17,7 +17,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$OUT"
 
-for tool in ffmpeg mkvmerge cargo python3; do
+for tool in ffmpeg mkvmerge cargo python3 cc pkg-config; do
   command -v "$tool" >/dev/null || { echo "error: $tool not found" >&2; exit 1; }
 done
 
@@ -158,6 +158,10 @@ ASS
   -c:v libx264 -pix_fmt yuv420p -preset veryfast -g 24 -c:s mov_text -metadata:s:s:0 language=eng \
   "$OUT/h264_movtext.mp4"
 cp "$TMP/subs.srt" "$OUT/h264_aac.srt"
+
+echo "==> VobSub bitmap subtitles (scripts/make-vobsub.c, needs FFmpeg dev libraries via pkg-config)"
+cc -o "$TMP/make-vobsub" "$ROOT/scripts/make-vobsub.c" $(pkg-config --cflags --libs libavformat libavcodec libavutil)
+"$TMP/make-vobsub" "$OUT/vobsub.mkv"
 
 echo "==> Dolby Vision Profile 8.1 and 5 (synthetic RPUs via scripts/dvgen, muxed by mkvmerge)"
 cargo build -q --release --manifest-path "$ROOT/scripts/dvgen/Cargo.toml" --target-dir "$TMP/dvgen-target"

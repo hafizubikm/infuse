@@ -33,6 +33,9 @@ final class PlaybackEngine: @unchecked Sendable {
         let videoRenderPath: String?
         let audioRenderPath: String?
         let duration: Double
+        let subtitles: SubtitleManager
+        /// The subtitle track chosen by default (forced in the audio language, or flagged default).
+        let defaultSubtitleID: String?
     }
 
     let url: URL
@@ -208,12 +211,20 @@ final class PlaybackEngine: @unchecked Sendable {
                     }
                 }
             }
+            // Every subtitle stream is demuxed and decoded, so switching tracks is instant.
+            let subtitles = SubtitleManager(file: file)
+            active.formUnion(subtitles.embeddedStreamIndices)
             demuxer.setActiveStreams(active)
+            subtitles.attach(demuxer)
+            subtitles.loadExternal(for: url)
+            let defaultSubtitle = SubtitleSelector.defaultTrack(subtitles.tracks, audioLanguage: audioStream?.language)
+            subtitles.select(defaultSubtitle?.id)
             demuxer.onEvent = { [weak self] event in self?.queue.async { self?.handle(event) } }
 
             emit(.opened(OpenedMedia(info: info, videoStream: videoStream, audioStream: audioStream,
                                      displaySize: displaySize, videoRenderPath: videoPath,
-                                     audioRenderPath: audioPath, duration: duration)))
+                                     audioRenderPath: audioPath, duration: duration,
+                                     subtitles: subtitles, defaultSubtitleID: defaultSubtitle?.id)))
 
             guard videoFeeder != nil || audioFeeder != nil else {
                 emit(.failed("Reel can't play any stream in this file yet."))
