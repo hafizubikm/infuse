@@ -16,6 +16,8 @@ A personal, Mac-only video player in the spirit of Infuse. It plays MKV, MP4, MO
 | TrueHD, DTS / DTS-HD MA, FLAC, Opus, Vorbis, MP3, PCM … | FFmpeg-decoded Float32 PCM with a Core Audio channel layout (5.1/7.1 …) → same audio renderer, so Spatial Audio still applies. TrueHD Atmos / DTS:X play their channel bed |
 | MPEG-2, VC-1, VP9, VP8, MPEG-4/Xvid, H.264 Hi10P … | FFmpeg decode (VideoToolbox-accelerated where available, e.g. VP9) → IOSurface NV12/P010 pixel buffers with colour/HDR attachments → same display layer. Also the automatic fallback if the hardware path rejects a stream |
 
+| Subtitles: SRT, ASS/SSA, mov_text, WebVTT, PGS, VobSub, DVB | Decoded by FFmpeg (text → ASS events, bitmaps → RGBA) and drawn by Reel on an SDR overlay above the picture, so they stay white over HDR. Sidecar `Movie.srt` / `Movie.en.forced.ass` files load automatically. **S** cycles tracks; size and background in Settings (⌘,) |
+
 Press **I** while playing to see the stream details and the path actually in use.
 
 ## Requirements

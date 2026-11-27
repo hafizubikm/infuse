@@ -15,5 +15,9 @@ struct ReelApp: App {
                     .keyboardShortcut("o")
             }
         }
+
+        Settings {
+            SettingsView()
+        }
     }
 }
