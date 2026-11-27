@@ -4,6 +4,19 @@ A personal, Mac-only video player in the spirit of Infuse. It plays MKV, MP4, MO
 
 **How it works:** FFmpeg only *demuxes* the file. Compressed video packets become `CMSampleBuffer`s with the right format description (avcC/hvcC/av1C, plus dvcC/dvvC for Dolby Vision, plus HDR metadata), and `AVSampleBufferDisplayLayer` decodes them in hardware and tone-maps them. E-AC-3/AC-3/AAC go to `AVSampleBufferAudioRenderer` untouched, so macOS decodes Atmos and spatializes it. Everything else is decoded by FFmpeg and handed to the same renderers. `AVSampleBufferRenderSynchronizer` keeps audio and video in sync, with audio as the master clock.
 
+## What plays how
+
+| Content | Path |
+| --- | --- |
+| H.264, HEVC (8/10-bit), AV1 | Compressed samples → `AVSampleBufferDisplayLayer` (VideoToolbox hardware decode, EDR tone mapping) |
+| HDR10 / HLG | Same, with colour primaries, transfer function, matrix, mastering display and MaxCLL/MaxFALL in the format description |
+| Dolby Vision 5, 8.1, 8.4 | `dvh1` + `hvcC` + `dvcC`/`dvvC`: real Dolby Vision. If the renderer refuses, 8.x falls back to its HDR10/HLG base layer |
+| Dolby Vision 7 (UHD Blu-ray) | Enhancement layer and RPU removed, HDR10 base layer played; shown as "Dolby Vision Profile 7 → playing HDR10 base layer" |
+| AAC, AC-3, E-AC-3 (incl. Atmos JOC) | Passed compressed to `AVSampleBufferAudioRenderer`; macOS decodes and spatializes (head-tracked on AirPods) |
+| TrueHD, DTS, FLAC, Opus, PCM … | FFmpeg-decoded multichannel PCM (milestone 4) |
+
+Press **I** while playing to see the stream details and the path actually in use.
+
 ## Requirements
 
 - Apple Silicon Mac, macOS 14 or later
