@@ -62,6 +62,21 @@ final class MediaFile {
         // `io` (and its AVIOContext) is released after the format context is closed.
     }
 
+    /// Decodes the first frame of E-AC-3 / TrueHD / DTS tracks to find Atmos and DTS:X (see
+    /// AudioFeatureDetector), updates `info`, and rewinds the file to the start.
+    func detectAudioFeatures() {
+        let features = AudioFeatureDetector.detect(in: self)
+        guard !features.isEmpty else { return }
+        var updated = info
+        for i in updated.streams.indices {
+            guard let f = features[updated.streams[i].index], var audio = updated.streams[i].audio else { continue }
+            audio.isAtmos = audio.isAtmos || f.isAtmos
+            audio.isDTSX = audio.isDTSX || f.isDTSX
+            updated.streams[i].audio = audio
+        }
+        info = updated
+    }
+
     func stream(at index: Int) -> UnsafeMutablePointer<AVStream>? {
         guard index >= 0, index < Int(formatContext.pointee.nb_streams) else { return nil }
         return formatContext.pointee.streams[index]

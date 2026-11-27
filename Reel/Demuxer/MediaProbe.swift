@@ -16,6 +16,7 @@ enum MediaProbe {
 
     static func probe(url: URL, options: Options = .default) throws -> MediaInfo {
         let file = try MediaFile(url: url, options: options)
+        file.detectAudioFeatures()
         return file.info
     }
 

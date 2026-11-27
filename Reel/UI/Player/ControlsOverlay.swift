@@ -15,6 +15,14 @@ struct ControlsOverlay: View {
 
             statusOverlay
 
+            if ui.showInfo {
+                InfoOverlay(controller: controller)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, 40).padding(.leading, 24)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             if ui.controlsVisible {
                 ControlBar(controller: controller, ui: ui)
                     .transition(.opacity)

@@ -26,6 +26,23 @@ struct VideoTrackFormat {
     let displaySize: CGSize
     /// Human-readable description of what is being rendered, for the info overlay.
     let renderDescription: String
+    /// The stream's Dolby Vision configuration, if any, and how it is being rendered.
+    var dolbyVision: DolbyVisionConfig? = nil
+    var dolbyVisionMode: DolbyVision.Mode? = nil
+
+    /// True when native Dolby Vision failed and the base layer would still look right.
+    var canFallBackToBaseLayer: Bool {
+        guard dolbyVisionMode == .native, let dv = dolbyVision else { return false }
+        return dv.blSignalCompatibilityID != 0
+    }
+}
+
+/// How to treat a Dolby Vision stream.
+enum DolbyVisionPolicy {
+    /// Native Dolby Vision where Apple supports it (profiles 5, 8.x); base layer for profile 7.
+    case automatic
+    /// Always play the HDR10/HLG/SDR base layer (fallback after a native failure).
+    case baseLayerOnly
 }
 
 enum VideoFormatError: Error, CustomStringConvertible {
@@ -55,7 +72,8 @@ enum VideoFormatFactory {
         VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9)
     }()
 
-    static func make(stream: UnsafeMutablePointer<AVStream>, details: VideoDetails) throws -> VideoTrackFormat {
+    static func make(stream: UnsafeMutablePointer<AVStream>, details: VideoDetails,
+                     dolbyVision policy: DolbyVisionPolicy = .automatic) throws -> VideoTrackFormat {
         _ = registerSupplementalDecoders
         let par = stream.pointee.codecpar.pointee
         let extradata = par.extradata.map { UnsafeRawBufferPointer(start: $0, count: Int(par.extradata_size)) }
@@ -67,24 +85,56 @@ enum VideoFormatFactory {
         case AV_CODEC_ID_H264:
             if let lengthSize = NALUtils.lengthSize(decoderConfigurationRecord: extradata, codec: .h264) {
                 let fd = try create(kCMVideoCodecType_H264, width, height, extensions, atoms: ["avcC": Data(extradata)])
-                return track(fd, .h264, kCMVideoCodecType_H264, .lengthPrefixed(lengthSize: lengthSize), details, "H.264")
+                return track(fd, .h264, kCMVideoCodecType_H264, .lengthPrefixed(lengthSize: lengthSize), details, hdrName("H.264", details))
             }
             let fd = try fromParameterSets(NALUtils.parameterSets(annexB: extradata, codec: .h264), codec: .h264, extensions: extensions)
-            return track(fd, .h264, kCMVideoCodecType_H264, .annexB, details, "H.264")
+            return track(fd, .h264, kCMVideoCodecType_H264, .annexB, details, hdrName("H.264", details))
 
         case AV_CODEC_ID_HEVC:
             if let lengthSize = NALUtils.lengthSize(decoderConfigurationRecord: extradata, codec: .hevc) {
+                let packetFormat = VideoPacketFormat.lengthPrefixed(lengthSize: lengthSize)
+                if let dv = details.dolbyVision {
+                    let mode = policy == .baseLayerOnly ? .baseLayerHDR10 : DolbyVision.mode(for: dv)
+                    if mode == .native {
+                        // dvh1 + hvcC + dvcC/dvvC: Apple renders real Dolby Vision from the in-band RPUs.
+                        let fd = try create(kCMVideoCodecType_DolbyVisionHEVC, width, height, extensions, atoms: [
+                            "hvcC": Data(extradata),
+                            DolbyVision.atomType(for: dv): DolbyVision.configurationRecord(dv),
+                        ])
+                        var t = track(fd, .hevc, kCMVideoCodecType_DolbyVisionHEVC, packetFormat, details,
+                                      DolbyVision.renderDescription(dv, mode: .native))
+                        t.dolbyVision = dv
+                        t.dolbyVisionMode = .native
+                        return t
+                    }
+                    // Base layer only: plain HEVC, enhancement layer and RPU NAL units removed.
+                    let fd = try create(kCMVideoCodecType_HEVC, width, height, extensions, atoms: ["hvcC": Data(extradata)])
+                    var t = track(fd, .hevc, kCMVideoCodecType_HEVC, packetFormat, details,
+                                  DolbyVision.renderDescription(dv, mode: .baseLayerHDR10),
+                                  dropped: [NALUtils.hevcDolbyVisionRPU, NALUtils.hevcDolbyVisionEL])
+                    t.dolbyVision = dv
+                    t.dolbyVisionMode = .baseLayerHDR10
+                    return t
+                }
                 let fd = try create(kCMVideoCodecType_HEVC, width, height, extensions, atoms: ["hvcC": Data(extradata)])
-                return track(fd, .hevc, kCMVideoCodecType_HEVC, .lengthPrefixed(lengthSize: lengthSize), details, "HEVC")
+                return track(fd, .hevc, kCMVideoCodecType_HEVC, packetFormat, details, hdrName("HEVC", details))
             }
             let fd = try fromParameterSets(NALUtils.parameterSets(annexB: extradata, codec: .hevc), codec: .hevc, extensions: extensions)
-            return track(fd, .hevc, kCMVideoCodecType_HEVC, .annexB, details, "HEVC")
+            return track(fd, .hevc, kCMVideoCodecType_HEVC, .annexB, details, hdrName("HEVC", details))
 
         case AV_CODEC_ID_AV1:
             // MP4/MKV/WebM store an AV1CodecConfigurationRecord (marker bit + version 1 → 0x81).
             guard extradata.count >= 4, extradata[0] == 0x81 else { throw VideoFormatError.missingParameterSets }
             let fd = try create(kCMVideoCodecType_AV1, width, height, extensions, atoms: ["av1C": Data(extradata)])
-            return track(fd, nil, kCMVideoCodecType_AV1, .av1, details, "AV1")
+            var t = track(fd, nil, kCMVideoCodecType_AV1, .av1, details, hdrName("AV1", details))
+            if let dv = details.dolbyVision {
+                // CoreMedia has no AV1 Dolby Vision sample type; profile 10 plays its AV1 base layer.
+                t = track(fd, nil, kCMVideoCodecType_AV1, .av1, details,
+                          "Dolby Vision Profile \(dv.profileString) → playing AV1 base layer")
+                t.dolbyVision = dv
+                t.dolbyVisionMode = .baseLayerHDR10
+            }
+            return t
 
         default:
             throw VideoFormatError.unsupportedCodec(ffString(avcodec_get_name(par.codec_id)) ?? "?")
@@ -169,6 +219,15 @@ enum VideoFormatFactory {
                               dropped: Set<UInt8> = []) -> VideoTrackFormat {
         VideoTrackFormat(formatDescription: fd, codec: codec, codecType: type, packetFormat: format,
                          droppedNALTypes: dropped, displaySize: displaySize(v), renderDescription: name)
+    }
+
+    /// "HEVC HDR10", "HEVC HLG", "H.264".
+    private static func hdrName(_ codec: String, _ v: VideoDetails) -> String {
+        switch v.hdr {
+        case .hdr10: return "\(codec) HDR10"
+        case .hlg: return "\(codec) HLG"
+        default: return codec
+        }
     }
 
     static func displaySize(_ v: VideoDetails) -> CGSize {

@@ -214,7 +214,7 @@ final class PlaybackEngineTests: XCTestCase {
         }
         spin(until: { opened != nil || failure != nil }, timeout: 5)
         XCTAssertNil(failure)
-        XCTAssertEqual(opened?.videoRenderPath, "HEVC · hardware decode")
+        XCTAssertEqual(opened?.videoRenderPath, "HEVC HDR10 · hardware decode")
         XCTAssertNotNil(opened?.audioRenderPath)
 
         spin(until: { engine.currentTime > 0.8 || failure != nil }, timeout: 6)

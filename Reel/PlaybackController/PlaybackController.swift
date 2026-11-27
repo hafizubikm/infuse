@@ -28,6 +28,9 @@ final class PlaybackController {
     private(set) var isMuted = false
     /// While the user drags the seek bar, the position they are pointing at.
     private(set) var scrubPosition: Double?
+    /// What decodes/renders the picture and sound, e.g. "Dolby Vision Profile 8.1 · hardware decode".
+    private(set) var videoRenderPath: String?
+    private(set) var audioRenderPath: String?
 
     /// Called once the file is open (e.g. so the window can size itself to the video).
     var onOpened: ((PlaybackEngine.OpenedMedia) -> Void)?
@@ -171,6 +174,8 @@ final class PlaybackController {
         case .opened(let media):
             self.media = media
             duration = media.duration
+            videoRenderPath = media.videoRenderPath
+            audioRenderPath = media.audioRenderPath
             status = wantsPlay ? .playing : .paused
             updateSleepAssertion()
             onOpened?(media)
@@ -190,6 +195,9 @@ final class PlaybackController {
             updateSleepAssertion()
         case .warning(let message):
             warning = message
+        case .renderPaths(let video, let audio):
+            videoRenderPath = video
+            audioRenderPath = audio
         }
     }
 

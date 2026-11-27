@@ -2,7 +2,7 @@ import AppKit
 
 /// Player keyboard shortcuts.
 ///   Space play/pause · ←/→ ±10 s · ⇧←/→ ±60 s · ↑/↓ volume · F full screen · M mute · Esc exit full screen
-///   (I info, S subtitles, A audio arrive with milestones 5/6.)
+///   I info overlay · (S subtitles, A audio arrive with milestones 5/6.)
 @MainActor
 enum KeyCommands {
     static func handle(_ event: NSEvent, controller: PlaybackController, ui: PlayerUIState, window: NSWindow?) -> Bool {
