@@ -1,8 +1,8 @@
 name: Build & Test
 
+# Manual only: run it from the Actions tab (Build & Test › Run workflow) when wanted.
+# To build on every push again, add `push:` back under `on:`.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 concurrency:
