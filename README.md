@@ -104,11 +104,24 @@ The tests use the tiny synthetic clips in `TestMedia/`: HDR10, HLG, Dolby Vision
 
 The Xcode project uses folder-synchronized groups, so new files under `Reel/` and `ReelTests/` are picked up automatically.
 
+## Known limits
+
+- TrueHD Atmos and DTS:X play their 7.1/5.1 channel bed: no public decoder renders their objects.
+  E-AC-3 Atmos goes to macOS untouched in Apple Spatial Audio mode; in Virtual Surround / Stereo
+  Reel decodes its bed.
+- Dolby Vision Profile 7 plays its HDR10 base layer; Profile 5 has no fallback if the Mac can't
+  render it.
+- AirPods and Beats are recognised by name or Apple's Bluetooth vendor ID. If a device is
+  misjudged, pick the Sound mode by hand; the log shows how each output was classified.
+- Subtitles aren't shown in Picture in Picture.
+
 ## Logs
 
 ```bash
 log stream --predicate 'subsystem == "app.reel.player"' --level debug
 ```
+
+Output-device changes are logged as `Output device: <name> [transport, manufacturer, model, channels] → kind`.
 
 ## License notes
 
