@@ -13,7 +13,8 @@ A personal, Mac-only video player in the spirit of Infuse. It plays MKV, MP4, MO
 | Dolby Vision 5, 8.1, 8.4 | `dvh1` + `hvcC` + `dvcC`/`dvvC`: real Dolby Vision. If the renderer refuses, 8.x falls back to its HDR10/HLG base layer |
 | Dolby Vision 7 (UHD Blu-ray) | Enhancement layer and RPU removed, HDR10 base layer played; shown as "Dolby Vision Profile 7 → playing HDR10 base layer" |
 | AAC, AC-3, E-AC-3 (incl. Atmos JOC) | Passed compressed to `AVSampleBufferAudioRenderer`; macOS decodes and spatializes (head-tracked on AirPods) |
-| TrueHD, DTS, FLAC, Opus, PCM … | FFmpeg-decoded multichannel PCM (milestone 4) |
+| TrueHD, DTS / DTS-HD MA, FLAC, Opus, Vorbis, MP3, PCM … | FFmpeg-decoded Float32 PCM with a Core Audio channel layout (5.1/7.1 …) → same audio renderer, so Spatial Audio still applies. TrueHD Atmos / DTS:X play their channel bed |
+| MPEG-2, VC-1, VP9, VP8, MPEG-4/Xvid, H.264 Hi10P … | FFmpeg decode (VideoToolbox-accelerated where available, e.g. VP9) → IOSurface NV12/P010 pixel buffers with colour/HDR attachments → same display layer. Also the automatic fallback if the hardware path rejects a stream |
 
 Press **I** while playing to see the stream details and the path actually in use.
 
