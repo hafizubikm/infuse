@@ -59,7 +59,7 @@ jobs:
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
             -resultBundlePath build/TestResults.xcresult \
             test 2>&1 | tee build/xcodebuild.log \
-            | grep -E "error:|warning: .*/Reel|Test Suite .*(passed|failed)|Test Case .*(failed|skipped)|Executed|render paths|\*\* (BUILD|TEST)"
+            | grep -E "error:|warning: .*/Reel|Test Suite .*(passed|failed)|Test Case .*(failed|skipped)|Executed|render paths|hardware decode:|\*\* (BUILD|TEST)"
 
       - name: Show build errors
         if: failure()

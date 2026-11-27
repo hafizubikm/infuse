@@ -101,6 +101,16 @@ mapfile -t T8 < <(tones 8)
   -c:v libx264 -pix_fmt yuv420p -preset veryfast -g 24 \
   -c:a flac "$OUT/h264_flac71.mkv"
 
+echo "==> H.264 High 10 (Hi10P, no Apple hardware decoder) + AAC (MKV)"
+"${FF[@]}" "${VSRC[@]}" "${T2[@]}" -filter_complex "$(amerge 1 2 stereo)" -map 0:v -map "[a]" \
+  -c:v libx264 -profile:v high10 -pix_fmt yuv420p10le -preset veryfast -g 24 \
+  -c:a aac -b:a 128k "$OUT/h264_hi10p_aac.mkv"
+
+echo "==> H.264 + PCM 16-bit 5.1 (MKV)"
+"${FF[@]}" "${VSRC[@]}" "${T6[@]}" -filter_complex "$(amerge 1 6 5.1)" -map 0:v -map "[a]" \
+  -c:v libx264 -pix_fmt yuv420p -preset veryfast -g 24 \
+  -c:a pcm_s16le -t 2 "$OUT/h264_pcm51.mkv"
+
 echo "==> MPEG-2 + MP2 (MPEG-TS)"
 "${FF[@]}" "${VSRC[@]}" "${T2[@]}" -filter_complex "$(amerge 1 2 stereo)" -map 0:v -map "[a]" \
   -c:v mpeg2video -b:v 2M -g 12 -c:a mp2 -b:a 192k "$OUT/mpeg2_mp2.ts"

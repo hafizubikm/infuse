@@ -104,6 +104,7 @@ final class CompressedVideoFeeder: @unchecked Sendable {
     /// Called on the feeder queue when the last packet was enqueued: (generation, end time).
     var onEndOfStream: ((Int, CMTime) -> Void)?
     var onError: ((Error) -> Void)?
+    var onDescriptionChanged: ((String) -> Void)?
 
     init(renderer: AVSampleBufferVideoRenderer, packets: PacketQueue, builder: VideoSampleBuilder) {
         self.renderer = renderer

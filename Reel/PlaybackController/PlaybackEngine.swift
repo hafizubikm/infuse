@@ -46,7 +46,7 @@ final class PlaybackEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "Reel.PlaybackEngine", qos: .userInitiated)
     private var file: MediaFile?
     private var demuxer: Demuxer?
-    private var videoFeeder: CompressedVideoFeeder?
+    private var videoFeeder: VideoFeeding?
     private var audioFeeder: AudioFeeding?
     private var duration: Double = 0
     private var desiredRate: Float = 0
@@ -67,6 +67,7 @@ final class PlaybackEngine: @unchecked Sendable {
     private var videoDetails: VideoDetails?
     private var isMatroska = false
     private var triedBaseLayerFallback = false
+    private var triedDecodedFallback = false
     private var handlingVideoFailure = false
     private var videoFailed = false
     private var videoPath: String?
@@ -159,28 +160,52 @@ final class PlaybackEngine: @unchecked Sendable {
                 active.insert(vs.index)
                 demuxer.setActiveStreams(active)
                 displaySize = VideoFormatFactory.displaySize(details)
+                let par = file.stream(at: vs.index)!.pointee.codecpar.pointee
+                let useHardwarePath = VideoFormatFactory.supportsCompressedPath(codecID: par.codec_id)
+                    && !VideoPathSelector.needsDecodedPath(vs)
                 do {
-                    try setUpVideo(policy: .automatic)
-                    displaySize = videoFeeder?.format.displaySize ?? displaySize
+                    if useHardwarePath {
+                        do {
+                            try setUpVideo(.compressed(.automatic))
+                        } catch {
+                            Log.video.notice("Hardware path unavailable (\(String(describing: error), privacy: .public)); decoding with FFmpeg")
+                            triedDecodedFallback = true
+                            try setUpVideo(.decoded)
+                        }
+                    } else {
+                        triedDecodedFallback = true
+                        try setUpVideo(.decoded)
+                    }
+                    displaySize = videoFeeder?.displaySize ?? displaySize
                 } catch {
                     active.remove(vs.index)
-                    emit(.warning("Video: \(error)"))
+                    emit(.warning("Video can't be decoded: \(error)"))
                 }
             }
 
             if let a = audioStream, let st = file.stream(at: a.index) {
                 let par = st.pointee.codecpar.pointee
+                active.insert(a.index)
+                demuxer.setActiveStreams(active)
+                let timing = StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime)
+                let packets = demuxer.queue(for: a.index)!
                 if AudioFormatFactory.supportsPassthrough(codecID: par.codec_id) {
-                    active.insert(a.index)
-                    demuxer.setActiveStreams(active)
-                    let feeder = PassthroughAudioFeeder(
-                        renderer: audioRenderer, packets: demuxer.queue(for: a.index)!, codecpar: par,
-                        timing: StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime))
+                    let feeder = PassthroughAudioFeeder(renderer: audioRenderer, packets: packets, codecpar: par, timing: timing)
                     wire(feeder)
                     audioFeeder = feeder
                     audioPath = "\(TrackLabels.audioFormat(a)) · decoded by macOS · Spatial Audio allowed"
                 } else {
-                    emit(.warning("\(TrackLabels.audioFormat(a)) audio isn't supported yet; playing without sound."))
+                    do {
+                        let feeder = try PCMAudioFeeder(renderer: audioRenderer, packets: packets, stream: st,
+                                                        timing: timing, label: TrackLabels.audioFormat(a))
+                        wire(feeder)
+                        audioFeeder = feeder
+                        let bed = (a.audio?.isAtmos == true || a.audio?.isDTSX == true) ? " (channel bed; objects not decoded)" : ""
+                        audioPath = "\(TrackLabels.audioFormat(a)) · decoded by FFmpeg\(bed) → multichannel PCM · Spatial Audio allowed"
+                    } catch {
+                        active.remove(a.index)
+                        emit(.warning("\(TrackLabels.audioFormat(a)) audio can't be decoded (\(error)); playing without sound."))
+                    }
                 }
             }
             demuxer.setActiveStreams(active)
@@ -212,49 +237,84 @@ final class PlaybackEngine: @unchecked Sendable {
         }
     }
 
-    /// Creates the video feeder for the selected stream (again, after a Dolby Vision fallback).
-    private func setUpVideo(policy: DolbyVisionPolicy) throws {
+    private enum VideoPath {
+        /// Compressed samples to AVSampleBufferDisplayLayer (VideoToolbox hardware decode).
+        case compressed(DolbyVisionPolicy)
+        /// FFmpeg decode (VideoToolbox hwaccel where possible) → pixel buffers.
+        case decoded
+    }
+
+    /// Creates the video feeder for the selected stream (again after a fallback).
+    private func setUpVideo(_ path: VideoPath) throws {
         guard let file, let demuxer, let index = videoStreamIndex, let details = videoDetails,
               let st = file.stream(at: index), let packets = demuxer.queue(for: index) else { return }
-        let format = try VideoFormatFactory.make(stream: st, details: details, dolbyVision: policy)
-        let builder = VideoSampleBuilder(
-            format: format,
-            timing: StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime),
-            frameRate: details.frameRate, isMatroska: isMatroska)
-        let feeder = CompressedVideoFeeder(renderer: videoRenderer, packets: packets, builder: builder)
+        let timing = StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime)
+        let feeder: VideoFeeding
+        switch path {
+        case .compressed(let policy):
+            let format = try VideoFormatFactory.make(stream: st, details: details, dolbyVision: policy)
+            let builder = VideoSampleBuilder(format: format, timing: timing, frameRate: details.frameRate, isMatroska: isMatroska)
+            feeder = CompressedVideoFeeder(renderer: videoRenderer, packets: packets, builder: builder)
+        case .decoded:
+            let stream = file.info.streams.first { $0.index == index }
+            let label = stream.map(VideoPathSelector.label) ?? "Video"
+            feeder = try DecodedVideoFeeder(renderer: videoRenderer, packets: packets, stream: st,
+                                            details: details, timing: timing, label: label)
+        }
         wire(feeder)
         videoFeeder = feeder
-        videoPath = "\(format.renderDescription) · hardware decode"
+        videoPath = feeder.renderDescription
         Log.video.notice("Video path: \(self.videoPath ?? "", privacy: .public)")
     }
 
-    /// Native Dolby Vision rejected by the renderer: retry once with the compatible base layer.
+    /// The renderer rejected the video:
+    /// 1. native Dolby Vision → retry once with the compatible base layer;
+    /// 2. other hardware-path failures (e.g. 10-bit H.264) → retry once with FFmpeg decoding;
+    /// 3. otherwise give up with a clear message.
     private func handleVideoFailure(_ error: Error) {
         guard !closed, !videoFailed else { return }
-        if let format = videoFeeder?.format, format.canFallBackToBaseLayer, !triedBaseLayerFallback {
+        let format = videoFeeder?.compressedFormat
+        var next: VideoPath?
+        var notice: String?
+        if let format, format.canFallBackToBaseLayer, !triedBaseLayerFallback {
             triedBaseLayerFallback = true
-            Log.video.error("Dolby Vision rendering failed (\(String(describing: error), privacy: .public)); using the base layer")
+            next = .compressed(.baseLayerOnly)
+            notice = "This Mac couldn't render Dolby Vision for this file, so Reel is showing its HDR base layer."
+        } else if format != nil, format?.dolbyVisionMode != .native, !triedDecodedFallback {
+            triedDecodedFallback = true
+            next = .decoded
+            notice = "The hardware decoder rejected this video; Reel is decoding it with FFmpeg instead."
+        }
+        if let next {
+            Log.video.error("Video path failed (\(String(describing: error), privacy: .public)); trying another path")
             let resumeAt = currentTime
             videoFeeder?.stop()
             videoRenderer.flush()
             do {
-                try setUpVideo(policy: .baseLayerOnly)
+                try setUpVideo(next)
                 emit(.renderPaths(video: videoPath, audio: audioPath))
-                emit(.warning("This Mac couldn't render Dolby Vision for this file, so Reel is showing its HDR base layer."))
+                if let notice { emit(.warning(notice)) }
                 doSeek(to: resumeAt, mode: .accurate)
                 return
             } catch {
-                Log.video.error("Base-layer fallback failed: \(String(describing: error), privacy: .public)")
+                Log.video.error("Fallback failed: \(String(describing: error), privacy: .public)")
             }
         }
-        let dvHint = videoFeeder?.format.dolbyVisionMode == .native && videoFeeder?.format.canFallBackToBaseLayer == false
+        let dvHint = format?.dolbyVisionMode == .native && format?.canFallBackToBaseLayer == false
             ? " Dolby Vision Profile 5 has no HDR10 fallback layer." : ""
         videoFailed = true
         videoFeeder?.stop()
         fail("Video decoding failed: \(error.localizedDescription).\(dvHint)")
     }
 
-    private func wire(_ feeder: CompressedVideoFeeder) {
+    private func wire(_ feeder: VideoFeeding) {
+        feeder.onDescriptionChanged = { [weak self] text in
+            self?.queue.async {
+                guard let self else { return }
+                self.videoPath = text
+                self.emit(.renderPaths(video: text, audio: self.audioPath))
+            }
+        }
         feeder.onPrerolled = { [weak self] gen in self?.queue.async { self?.prerolled(video: true, generation: gen) } }
         feeder.onEndOfStream = { [weak self] gen, end in
             self?.queue.async { guard let self, gen == self.generation else { return }; self.videoEnd = end }
@@ -433,13 +493,39 @@ final class PlaybackEngine: @unchecked Sendable {
 enum TrackSelector {
     static func video(in info: MediaInfo) -> StreamInfo? { info.primaryVideo }
 
-    /// The default audio track; until FFmpeg-decoded audio exists (milestone 4), prefers a track
-    /// macOS can decode itself when the default one can't be played.
+    /// The default (or first) audio track — except that a default TrueHD Atmos track is swapped
+    /// for an E-AC-3 Atmos track in the same language when the file has one: macOS renders the
+    /// E-AC-3 Atmos objects for Spatial Audio, while FFmpeg only decodes TrueHD's 7.1 bed.
     static func audio(in info: MediaInfo) -> StreamInfo? {
         guard let primary = info.primaryAudio else { return nil }
-        let passthrough: Set<String> = ["aac", "ac3", "eac3"]
-        if passthrough.contains(primary.codecName) { return primary }
-        let candidates = info.audioStreams.filter { passthrough.contains($0.codecName) }
-        return candidates.first(where: { $0.language == primary.language }) ?? candidates.first ?? primary
+        if primary.codecName == "truehd", primary.audio?.isAtmos == true,
+           let eac3 = info.audioStreams.first(where: {
+               $0.codecName == "eac3" && $0.audio?.isAtmos == true && $0.language == primary.language
+           }) {
+            return eac3
+        }
+        return primary
+    }
+}
+
+/// Chooses between the hardware (compressed) and FFmpeg-decoded video paths.
+enum VideoPathSelector {
+    /// Streams VideoToolbox can't decode even though the codec is H.264/HEVC/AV1.
+    static func needsDecodedPath(_ s: StreamInfo) -> Bool {
+        guard let v = s.video else { return false }
+        if s.codecName == "h264" {
+            // 10-bit (Hi10P) and 4:2:2 / 4:4:4 H.264 have no hardware decoder on Apple Silicon.
+            if (v.bitDepth ?? 8) > 8 { return true }
+            if let pf = v.pixelFormat, pf.hasPrefix("yuv422") || pf.hasPrefix("yuv444") { return true }
+        }
+        return false
+    }
+
+    /// "VC-1", "MPEG-2", "H.264 High 10" …
+    static func label(_ s: StreamInfo) -> String {
+        var label = s.codecDisplayName
+        if let profile = s.profileName, s.codecName == "h264" { label += " \(profile)" }
+        if let hdr = s.video.flatMap(TrackLabels.hdrDescription) { label += " \(hdr)" }
+        return label
     }
 }
