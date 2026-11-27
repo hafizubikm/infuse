@@ -49,7 +49,14 @@ enum VideoFormatFactory {
         codecID == AV_CODEC_ID_H264 || codecID == AV_CODEC_ID_HEVC || codecID == AV_CODEC_ID_AV1
     }
 
+    /// AV1 and VP9 are "supplemental" decoders on macOS: they exist only after registration.
+    static let registerSupplementalDecoders: Void = {
+        VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_AV1)
+        VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9)
+    }()
+
     static func make(stream: UnsafeMutablePointer<AVStream>, details: VideoDetails) throws -> VideoTrackFormat {
+        _ = registerSupplementalDecoders
         let par = stream.pointee.codecpar.pointee
         let extradata = par.extradata.map { UnsafeRawBufferPointer(start: $0, count: Int(par.extradata_size)) }
             ?? UnsafeRawBufferPointer(start: nil, count: 0)

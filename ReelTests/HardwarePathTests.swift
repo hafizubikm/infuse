@@ -27,12 +27,13 @@ final class VideoFormatTests: XCTestCase {
     private final class DecodeResult: @unchecked Sendable {
         var frames = 0
         var errors: [OSStatus] = []
-        var transfer: CFString?
-        var primaries: CFString?
+        var transfer: String?
+        var primaries: String?
     }
 
     private func decode(_ name: String, codecType: CMVideoCodecType, expectPacketFormat: VideoPacketFormat? = nil,
                         file: StaticString = #filePath, line: UInt = #line) throws -> (VideoTrackFormat, DecodeResult) {
+        _ = VideoFormatFactory.registerSupplementalDecoders
         if codecType == kCMVideoCodecType_AV1 && !VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1) {
             throw XCTSkip("No AV1 hardware decoder on this machine")
         }
@@ -52,6 +53,9 @@ final class VideoFormatTests: XCTestCase {
         let status = VTDecompressionSessionCreate(allocator: nil, formatDescription: format.formatDescription,
                                                   decoderSpecification: nil, imageBufferAttributes: attrs as CFDictionary,
                                                   outputCallback: nil, decompressionSessionOut: &session)
+        if status == kVTCouldNotFindVideoDecoderErr && codecType == kCMVideoCodecType_AV1 {
+            throw XCTSkip("AV1 decoder unavailable on this machine (needs M3 or later)")
+        }
         XCTAssertEqual(status, noErr, "VTDecompressionSessionCreate", file: file, line: line)
         let s = try XCTUnwrap(session, file: file, line: line)
         defer { VTDecompressionSessionInvalidate(s) }
@@ -65,8 +69,8 @@ final class VideoFormatTests: XCTestCase {
                 if status != noErr { result.errors.append(status); return }
                 guard let image else { return }
                 result.frames += 1
-                result.transfer = CVBufferCopyAttachment(image, kCVImageBufferTransferFunctionKey, nil) as! CFString?
-                result.primaries = CVBufferCopyAttachment(image, kCVImageBufferColorPrimariesKey, nil) as! CFString?
+                result.transfer = CVBufferCopyAttachment(image, kCVImageBufferTransferFunctionKey, nil) as? String
+                result.primaries = CVBufferCopyAttachment(image, kCVImageBufferColorPrimariesKey, nil) as? String
             }
             if st != noErr { result.errors.append(st) }
         }
@@ -86,14 +90,14 @@ final class VideoFormatTests: XCTestCase {
                        kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String)
         XCTAssertEqual((ext[kCMFormatDescriptionExtension_MasteringDisplayColorVolume as String] as? Data)?.count, 24)
         XCTAssertEqual((ext[kCMFormatDescriptionExtension_ContentLightLevelInfo as String] as? Data)?.count, 4)
-        XCTAssertEqual(r.transfer as String?, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String)
-        XCTAssertEqual(r.primaries as String?, kCVImageBufferColorPrimaries_ITU_R_2020 as String)
+        XCTAssertEqual(r.transfer, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String)
+        XCTAssertEqual(r.primaries, kCVImageBufferColorPrimaries_ITU_R_2020 as String)
     }
 
     func testHEVCInMP4AndHLGInMOV() throws {
         _ = try decode("hevc_hdr10_aac.mp4", codecType: kCMVideoCodecType_HEVC)
         let (_, hlg) = try decode("hevc_hlg_aac.mov", codecType: kCMVideoCodecType_HEVC)
-        XCTAssertEqual(hlg.transfer as String?, kCVImageBufferTransferFunction_ITU_R_2100_HLG as String)
+        XCTAssertEqual(hlg.transfer, kCVImageBufferTransferFunction_ITU_R_2100_HLG as String)
     }
 
     func testH264InMP4() throws {
@@ -129,9 +133,17 @@ final class AudioFormatTests: XCTestCase {
         let asbd = try XCTUnwrap(CMAudioFormatDescriptionGetStreamBasicDescription(format.formatDescription)).pointee
         XCTAssertEqual(asbd.mFormatID, expectFormat, file: file, line: line)
 
-        let inFormat = AVAudioFormat(cmAudioFormatDescription: format.formatDescription)
-        let outFormat = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: inFormat.sampleRate,
-                                                    channels: inFormat.channelCount, interleaved: false))
+        // AVAudioFormat needs an explicit channel layout for more than two channels.
+        var inASBD = asbd
+        let layout = try XCTUnwrap(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | asbd.mChannelsPerFrame))
+        let inFormat = try XCTUnwrap(AVAudioFormat(streamDescription: &inASBD, channelLayout: layout), file: file, line: line)
+        if let cookie = CMAudioFormatDescriptionGetMagicCookie(format.formatDescription, sizeOut: nil) {
+            var size = 0
+            _ = CMAudioFormatDescriptionGetMagicCookie(format.formatDescription, sizeOut: &size)
+            inFormat.magicCookie = Data(bytes: cookie, count: size)
+        }
+        let outFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: asbd.mSampleRate,
+                                      interleaved: false, channelLayout: layout)
         let converter = try XCTUnwrap(AVAudioConverter(from: inFormat, to: outFormat), file: file, line: line)
         var queue = packets
         var decodedFrames: AVAudioFrameCount = 0

@@ -4,6 +4,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         FFmpegLogging.install()
+        _ = VideoFormatFactory.registerSupplementalDecoders
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

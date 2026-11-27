@@ -47,7 +47,8 @@ enum SampleBufferFactory {
         guard let array = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true),
               CFArrayGetCount(array) > 0 else { return }
         let dict = unsafeBitCast(CFArrayGetValueAtIndex(array, 0), to: CFMutableDictionary.self)
+        let boolean: CFBoolean = value ? kCFBooleanTrue! : kCFBooleanFalse!
         CFDictionarySetValue(dict, Unmanaged.passUnretained(key).toOpaque(),
-                             Unmanaged.passUnretained(value ? kCFBooleanTrue : kCFBooleanFalse).toOpaque())
+                             Unmanaged.passUnretained(boolean).toOpaque())
     }
 }
