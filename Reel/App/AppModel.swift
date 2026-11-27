@@ -18,6 +18,8 @@ final class AppModel {
 
     func open(_ urls: [URL]) {
         guard let url = urls.first(where: SupportedMedia.isVideo) ?? urls.first else { return }
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        PlayerWindowController.open(url)
         inspect(url)
     }
 
@@ -31,7 +33,7 @@ final class AppModel {
         open([url])
     }
 
-    /// Milestone 1: probe with FFmpeg off the main thread and show the stream list.
+    /// Probes with FFmpeg off the main thread and shows the stream list in the main window.
     private func inspect(_ url: URL) {
         inspector = .loading(url)
         Task.detached(priority: .userInitiated) {

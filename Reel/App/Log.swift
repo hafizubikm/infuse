@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 import CFFmpeg
 
 /// Unified-logging categories. View with: log stream --predicate 'subsystem == "app.reel.player"'
