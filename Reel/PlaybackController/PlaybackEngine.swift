@@ -67,6 +67,8 @@ final class PlaybackEngine: @unchecked Sendable {
     private var videoDetails: VideoDetails?
     private var isMatroska = false
     private var triedBaseLayerFallback = false
+    private var handlingVideoFailure = false
+    private var videoFailed = false
     private var videoPath: String?
     private var audioPath: String?
 
@@ -228,7 +230,7 @@ final class PlaybackEngine: @unchecked Sendable {
 
     /// Native Dolby Vision rejected by the renderer: retry once with the compatible base layer.
     private func handleVideoFailure(_ error: Error) {
-        guard !closed else { return }
+        guard !closed, !videoFailed else { return }
         if let format = videoFeeder?.format, format.canFallBackToBaseLayer, !triedBaseLayerFallback {
             triedBaseLayerFallback = true
             Log.video.error("Dolby Vision rendering failed (\(String(describing: error), privacy: .public)); using the base layer")
@@ -247,6 +249,8 @@ final class PlaybackEngine: @unchecked Sendable {
         }
         let dvHint = videoFeeder?.format.dolbyVisionMode == .native && videoFeeder?.format.canFallBackToBaseLayer == false
             ? " Dolby Vision Profile 5 has no HDR10 fallback layer." : ""
+        videoFailed = true
+        videoFeeder?.stop()
         fail("Video decoding failed: \(error.localizedDescription).\(dvHint)")
     }
 
@@ -255,7 +259,13 @@ final class PlaybackEngine: @unchecked Sendable {
         feeder.onEndOfStream = { [weak self] gen, end in
             self?.queue.async { guard let self, gen == self.generation else { return }; self.videoEnd = end }
         }
-        feeder.onError = { [weak self] error in self?.queue.async { self?.handleVideoFailure(error) } }
+        feeder.onError = { [weak self, weak feeder] error in
+            self?.queue.async {
+                // Ignore late errors from a feeder that has already been replaced.
+                guard let self, let feeder, feeder === self.videoFeeder else { return }
+                self.handleVideoFailure(error)
+            }
+        }
     }
 
     private func wire(_ feeder: AudioFeeding) {
@@ -338,6 +348,13 @@ final class PlaybackEngine: @unchecked Sendable {
 
     private func tick() {
         guard !closed else { return }
+        // The renderer can fail asynchronously (e.g. no Dolby Vision decoder) after it stops
+        // asking for data, so the feeder may never see it; check here as well.
+        if videoFeeder != nil, videoRenderer.status == .failed, !handlingVideoFailure {
+            handlingVideoFailure = true
+            handleVideoFailure(videoRenderer.error ?? VideoFormatError.coreMedia(-1))
+            handlingVideoFailure = false
+        }
         let now = synchronizer.currentTime()
         emit(.time(max(0, now.seconds)))
         guard !ended, !prerolling, synchronizer.rate > 0 else { return }

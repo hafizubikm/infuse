@@ -6,10 +6,19 @@ import CFFmpeg
 @testable import Reel
 
 final class DolbyVisionFormatTests: XCTestCase {
-    private func open(_ name: String) throws -> (MediaFile, StreamInfo, UnsafeMutablePointer<AVStream>) {
+    /// Keeps the MediaFile alive alongside its stream pointer (the stream is freed with the file).
+    private struct Opened {
+        let file: MediaFile
+        let video: StreamInfo
+        var stream: UnsafeMutablePointer<AVStream> { file.stream(at: video.index)! }
+        var details: VideoDetails { video.video! }
+    }
+
+    private func open(_ name: String) throws -> Opened {
         let media = try MediaFile(url: try TestMedia.url(name))
         let vs = try XCTUnwrap(media.info.primaryVideo)
-        return (media, vs, try XCTUnwrap(media.stream(at: vs.index)))
+        XCTAssertNotNil(vs.video)
+        return Opened(file: media, video: vs)
     }
 
     private func atoms(_ format: VideoTrackFormat) -> [String: Data] {
@@ -19,8 +28,8 @@ final class DolbyVisionFormatTests: XCTestCase {
 
     func testProfile81IsNativeDolbyVision() throws {
         for name in ["dv_p81.mkv", "dv_p81.mp4"] {
-            let (_, vs, st) = try open(name)
-            let format = try VideoFormatFactory.make(stream: st, details: try XCTUnwrap(vs.video))
+            let o = try open(name)
+            let format = try VideoFormatFactory.make(stream: o.stream, details: o.details)
             XCTAssertEqual(format.codecType, kCMVideoCodecType_DolbyVisionHEVC, name)
             XCTAssertEqual(format.dolbyVisionMode, .native, name)
             XCTAssertTrue(format.canFallBackToBaseLayer, name)
@@ -33,16 +42,17 @@ final class DolbyVisionFormatTests: XCTestCase {
     }
 
     func testProfile5IsNativeWithoutFallback() throws {
-        let (_, vs, st) = try open("dv_p5.mkv")
-        let format = try VideoFormatFactory.make(stream: st, details: try XCTUnwrap(vs.video))
+        let o = try open("dv_p5.mkv")
+        let format = try VideoFormatFactory.make(stream: o.stream, details: o.details)
         XCTAssertEqual(format.codecType, kCMVideoCodecType_DolbyVisionHEVC)
         XCTAssertNotNil(atoms(format)["dvcC"])
         XCTAssertFalse(format.canFallBackToBaseLayer, "profile 5 has no compatible base layer")
     }
 
     func testBaseLayerPolicyAndSimulatedProfile7StripRPU() throws {
-        let (media, vs, st) = try open("dv_p81.mkv")
-        var details = try XCTUnwrap(vs.video)
+        let o = try open("dv_p81.mkv")
+        let (media, vs, st) = (o.file, o.video, o.stream)
+        var details = o.details
         // Pretend the stream is Blu-ray dual-layer profile 7.
         details.dolbyVision = DolbyVisionConfig(profile: 7, level: 6, rpuPresent: true, elPresent: true,
                                                 blPresent: true, blSignalCompatibilityID: 6)
@@ -100,8 +110,9 @@ final class DolbyVisionFormatTests: XCTestCase {
     }
 
     func testNativeProfile81DecodesWhereSupported() throws {
-        let (media, vs, st) = try open("dv_p81.mkv")
-        let format = try VideoFormatFactory.make(stream: st, details: try XCTUnwrap(vs.video))
+        let o = try open("dv_p81.mkv")
+        let (media, vs, st) = (o.file, o.video, o.stream)
+        let format = try VideoFormatFactory.make(stream: st, details: o.details)
         var session: VTDecompressionSession?
         let status = VTDecompressionSessionCreate(allocator: nil, formatDescription: format.formatDescription,
                                                   decoderSpecification: nil, imageBufferAttributes: nil,
