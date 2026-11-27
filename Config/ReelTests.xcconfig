@@ -1,0 +1,9 @@
+// Build settings for the ReelTests unit-test bundle (hosted inside Reel.app).
+#include "Shared.xcconfig"
+
+PRODUCT_NAME = ReelTests
+PRODUCT_BUNDLE_IDENTIFIER = app.reel.player.tests
+GENERATE_INFOPLIST_FILE = YES
+TEST_HOST = $(BUILT_PRODUCTS_DIR)/Reel.app/Contents/MacOS/Reel
+BUNDLE_LOADER = $(TEST_HOST)
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @loader_path/../Frameworks

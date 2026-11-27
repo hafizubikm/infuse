@@ -1,0 +1,21 @@
+// Build settings for the Reel app target.
+#include "Shared.xcconfig"
+
+// System libraries/frameworks the static FFmpeg library needs. scripts/build-ffmpeg.sh
+// writes the exact list (from FFmpeg's pkg-config files) to Vendor/FFmpeg/FFmpeg.xcconfig,
+// which overrides this default when present.
+FFMPEG_LDFLAGS = -lz -lbz2 -liconv -lm -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework CoreServices -framework VideoToolbox
+#include? "../Vendor/FFmpeg/FFmpeg.xcconfig"
+
+PRODUCT_NAME = Reel
+PRODUCT_BUNDLE_IDENTIFIER = app.reel.player
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+INFOPLIST_FILE = Config/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+COMBINE_HIDPI_IMAGES = YES
+ENABLE_PREVIEWS = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+
+OTHER_LDFLAGS = $(inherited) $(FFMPEG_LDFLAGS)

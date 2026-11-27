@@ -1,0 +1,45 @@
+// Shared build settings for every Reel target and configuration.
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 14.0
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = YES
+
+SWIFT_VERSION = 5.0
+SWIFT_EMIT_LOC_STRINGS = NO
+CLANG_ENABLE_MODULES = YES
+CLANG_ENABLE_OBJC_ARC = YES
+GCC_C_LANGUAGE_STANDARD = gnu17
+CLANG_CXX_LANGUAGE_STANDARD = gnu++20
+ALWAYS_SEARCH_USER_PATHS = NO
+ENABLE_STRICT_OBJC_MSGSEND = YES
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+
+// Local, ad-hoc signing. No sandbox, no hardened runtime, no App Store.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+ENABLE_HARDENED_RUNTIME = NO
+ENABLE_APP_SANDBOX = NO
+
+// Debug / Release
+DEBUG_INFORMATION_FORMAT[config=Debug] = dwarf
+DEBUG_INFORMATION_FORMAT[config=Release] = dwarf-with-dsym
+SWIFT_OPTIMIZATION_LEVEL[config=Debug] = -Onone
+SWIFT_OPTIMIZATION_LEVEL[config=Release] = -O
+SWIFT_COMPILATION_MODE[config=Release] = wholemodule
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug] = DEBUG
+GCC_OPTIMIZATION_LEVEL[config=Debug] = 0
+GCC_OPTIMIZATION_LEVEL[config=Release] = s
+GCC_PREPROCESSOR_DEFINITIONS[config=Debug] = DEBUG=1 $(inherited)
+ENABLE_TESTABILITY[config=Debug] = YES
+ENABLE_NS_ASSERTIONS[config=Release] = NO
+// Keep every FFmpeg symbol in Debug so the hosted unit tests can link against them.
+DEAD_CODE_STRIPPING[config=Debug] = NO
+DEAD_CODE_STRIPPING[config=Release] = YES
+COPY_PHASE_STRIP = NO
+
+// FFmpeg (built by scripts/build-ffmpeg.sh) and the CFFmpeg Clang module.
+FFMPEG_DIR = $(PROJECT_DIR)/Vendor/FFmpeg
+HEADER_SEARCH_PATHS = $(inherited) $(PROJECT_DIR)/Modules/CFFmpeg $(FFMPEG_DIR)/FFmpeg.xcframework/macos-arm64/Headers
+SWIFT_INCLUDE_PATHS = $(inherited) $(PROJECT_DIR)/Modules/CFFmpeg

@@ -1,0 +1,322 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		7E0000000000000000000030 /* FFmpeg.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000022 /* FFmpeg.xcframework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7E0000000000000000000060 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7E0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E0000000000000000000040;
+			remoteInfo = Reel;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		7E0000000000000000000020 /* Reel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Reel.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E0000000000000000000021 /* ReelTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReelTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E0000000000000000000022 /* FFmpeg.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FFmpeg.xcframework; path = Vendor/FFmpeg/FFmpeg.xcframework; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000023 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7E0000000000000000000024 /* Reel.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Reel.xcconfig; sourceTree = "<group>"; };
+		7E0000000000000000000025 /* ReelTests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ReelTests.xcconfig; sourceTree = "<group>"; };
+		7E0000000000000000000026 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+		7E0000000000000000000027 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		7E0000000000000000000028 /* FFmpegShim.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FFmpegShim.h; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		7E0000000000000000000010 /* Reel */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Reel;
+			sourceTree = "<group>";
+		};
+		7E0000000000000000000011 /* ReelTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ReelTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7E0000000000000000000051 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E0000000000000000000030 /* FFmpeg.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000054 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7E0000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				7E0000000000000000000010 /* Reel */,
+				7E0000000000000000000011 /* ReelTests */,
+				7E0000000000000000000006 /* CFFmpeg */,
+				7E0000000000000000000004 /* Config */,
+				7E0000000000000000000005 /* Frameworks */,
+				7E0000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		7E0000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7E0000000000000000000020 /* Reel.app */,
+				7E0000000000000000000021 /* ReelTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7E0000000000000000000004 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				7E0000000000000000000023 /* Info.plist */,
+				7E0000000000000000000026 /* Shared.xcconfig */,
+				7E0000000000000000000024 /* Reel.xcconfig */,
+				7E0000000000000000000025 /* ReelTests.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		7E0000000000000000000005 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7E0000000000000000000022 /* FFmpeg.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		7E0000000000000000000006 /* CFFmpeg */ = {
+			isa = PBXGroup;
+			children = (
+				7E0000000000000000000027 /* module.modulemap */,
+				7E0000000000000000000028 /* FFmpegShim.h */,
+			);
+			name = CFFmpeg;
+			path = Modules/CFFmpeg;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7E0000000000000000000040 /* Reel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E0000000000000000000071 /* Build configuration list for PBXNativeTarget "Reel" */;
+			buildPhases = (
+				7E0000000000000000000050 /* Sources */,
+				7E0000000000000000000051 /* Frameworks */,
+				7E0000000000000000000052 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7E0000000000000000000010 /* Reel */,
+			);
+			name = Reel;
+			packageProductDependencies = (
+			);
+			productName = Reel;
+			productReference = 7E0000000000000000000020 /* Reel.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7E0000000000000000000041 /* ReelTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E0000000000000000000072 /* Build configuration list for PBXNativeTarget "ReelTests" */;
+			buildPhases = (
+				7E0000000000000000000053 /* Sources */,
+				7E0000000000000000000054 /* Frameworks */,
+				7E0000000000000000000055 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7E0000000000000000000061 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7E0000000000000000000011 /* ReelTests */,
+			);
+			name = ReelTests;
+			packageProductDependencies = (
+			);
+			productName = ReelTests;
+			productReference = 7E0000000000000000000021 /* ReelTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7E0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					7E0000000000000000000040 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					7E0000000000000000000041 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 7E0000000000000000000040;
+					};
+				};
+			};
+			buildConfigurationList = 7E0000000000000000000070 /* Build configuration list for PBXProject "Reel" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 7E0000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7E0000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7E0000000000000000000040 /* Reel */,
+				7E0000000000000000000041 /* ReelTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7E0000000000000000000052 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000055 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7E0000000000000000000050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000053 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7E0000000000000000000061 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E0000000000000000000040 /* Reel */;
+			targetProxy = 7E0000000000000000000060 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		7E0000000000000000000080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7E0000000000000000000026 /* Shared.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		7E0000000000000000000081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7E0000000000000000000026 /* Shared.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		7E0000000000000000000082 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7E0000000000000000000024 /* Reel.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		7E0000000000000000000083 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7E0000000000000000000024 /* Reel.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		7E0000000000000000000084 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7E0000000000000000000025 /* ReelTests.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		7E0000000000000000000085 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7E0000000000000000000025 /* ReelTests.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7E0000000000000000000070 /* Build configuration list for PBXProject "Reel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E0000000000000000000080 /* Debug */,
+				7E0000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E0000000000000000000071 /* Build configuration list for PBXNativeTarget "Reel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E0000000000000000000082 /* Debug */,
+				7E0000000000000000000083 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E0000000000000000000072 /* Build configuration list for PBXNativeTarget "ReelTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E0000000000000000000084 /* Debug */,
+				7E0000000000000000000085 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 7E0000000000000000000001 /* Project object */;
+}

@@ -1,0 +1,8 @@
+// Clang module that exposes FFmpeg (libavformat/libavcodec/libavutil/libswresample/libswscale)
+// plus Reel's small C shim to Swift as `import CFFmpeg`.
+//
+// The static FFmpeg library itself is linked through Vendor/FFmpeg/FFmpeg.xcframework.
+module CFFmpeg {
+    header "FFmpegShim.h"
+    export *
+}

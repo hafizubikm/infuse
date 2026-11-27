@@ -1,0 +1,61 @@
+name: Build & Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Restore FFmpeg build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            Vendor/FFmpeg/FFmpeg.xcframework
+            Vendor/FFmpeg/FFmpeg.xcconfig
+            Vendor/FFmpeg/BUILD_INFO
+            Vendor/FFmpeg/LICENSE.LGPLv2.1
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      - name: Build FFmpeg (LGPL, static, arm64)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh
+
+      - name: Build and run unit tests
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild -project Reel.xcodeproj -scheme Reel -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
+            -resultBundlePath build/TestResults.xcresult \
+            test 2>&1 | tee build/xcodebuild.log \
+            | grep -E "error:|warning: .*/Reel|Test Suite .*(passed|failed)|Test Case .*(failed|skipped)|Executed|\*\* (BUILD|TEST)"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build/xcodebuild.log
+            build/TestResults.xcresult
+            Vendor/FFmpeg/.build/*.log
+          if-no-files-found: ignore

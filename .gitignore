@@ -1,0 +1,15 @@
+.DS_Store
+
+# FFmpeg build output (scripts/build-ffmpeg.sh)
+/Vendor/FFmpeg/
+
+# Xcode
+/build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Dev tools
+/scripts/dvgen/target/
+.swiftpm/
