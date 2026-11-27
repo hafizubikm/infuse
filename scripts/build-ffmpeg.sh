@@ -97,10 +97,12 @@ cd "$SRC"
 ./configure \
   "${CONFIGURE_FLAGS[@]}" \
   --cc="$CC" \
-  --host-cc="$CC" \
   --sysroot="$SDK" \
-  --extra-cflags="$ARCHFLAGS -O3 -fno-common" \
-  --extra-ldflags="$ARCHFLAGS" \
+  --extra-cflags="$ARCHFLAGS -isysroot $SDK -O3 -fno-common" \
+  --extra-ldflags="$ARCHFLAGS -isysroot $SDK" \
+  --host-cc="$CC" \
+  --host-cflags="-isysroot $SDK" \
+  --host-ldflags="-isysroot $SDK" \
   | tee "$WORK/configure.log"
 
 # Refuse to continue unless FFmpeg reports an LGPL-only configuration.
