@@ -15,6 +15,8 @@ final class PCMAudioFeeder: AudioFeeding, @unchecked Sendable {
     private let decoder: AudioDecoder
     private let timing: StreamTimeConverter
     private let codecLabel: String
+    /// Virtual Surround / stereo downmix applied to multichannel audio (nil = pass on as is).
+    private let processor: AudioChannelProcessor?
     private let queue = DispatchQueue(label: "Reel.PCMAudioFeeder", qos: .userInitiated)
 
     // Feeder-queue state
@@ -43,11 +45,12 @@ final class PCMAudioFeeder: AudioFeeding, @unchecked Sendable {
     private(set) var formatDescriptionText = ""
 
     init(renderer: AVSampleBufferAudioRenderer, packets: PacketQueue, stream: UnsafeMutablePointer<AVStream>,
-         timing: StreamTimeConverter, label: String) throws {
+         timing: StreamTimeConverter, label: String, processor: AudioChannelProcessor? = nil) throws {
         self.renderer = renderer
         self.packets = packets
         self.timing = timing
         codecLabel = label
+        self.processor = processor
         decoder = try AudioDecoder(stream: stream)
     }
 
@@ -56,6 +59,7 @@ final class PCMAudioFeeder: AudioFeeding, @unchecked Sendable {
             self.generation = generation
             self.playFrom = playFrom
             decoder.flush()
+            processor?.reset()
             pending.removeAll(keepingCapacity: true)
             pendingStart = .invalid
             ready.removeAll()
@@ -175,15 +179,22 @@ final class PCMAudioFeeder: AudioFeeding, @unchecked Sendable {
     private func emitPending() {
         guard !pending.isEmpty, pendingStart.isValid else { return }
         do {
-            if formatKey == nil || formatKey!.rate != pendingRate || formatKey!.speakers != pendingSpeakers {
-                let p = ChannelLayoutMapper.plan(for: pendingSpeakers)
+            var samples = pending
+            var speakers = pendingSpeakers
+            if let processor, speakers.count > 2 {
+                samples = processor.process(pending, speakers: speakers, sampleRate: pendingRate)
+                speakers = [.frontLeft, .frontRight]
+            }
+            if formatKey == nil || formatKey!.rate != pendingRate || formatKey!.speakers != speakers {
+                let p = ChannelLayoutMapper.plan(for: speakers)
                 plan = p
                 formatDescription = try ChannelLayoutMapper.pcmFormatDescription(sampleRate: pendingRate, plan: p)
-                formatKey = (pendingRate, pendingSpeakers)
-                formatDescriptionText = "\(codecLabel) → \(p.name) Float32 PCM \(pendingRate / 1000) kHz"
+                formatKey = (pendingRate, speakers)
+                let via = speakers == pendingSpeakers ? "" : " → \(processor?.name ?? "")"
+                formatDescriptionText = "\(codecLabel)\(via) → \(p.name) Float32 PCM \(pendingRate / 1000) kHz"
             }
             guard let fd = formatDescription, let plan else { return }
-            let data = plan.reorder(pending)
+            let data = plan.reorder(samples)
             let frames = data.count / plan.channelCount
             guard let block = data.withUnsafeBytes({ SampleBufferFactory.blockBuffer($0) }) else { return }
             var sb: CMSampleBuffer?

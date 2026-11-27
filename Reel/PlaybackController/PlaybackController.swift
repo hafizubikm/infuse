@@ -43,6 +43,13 @@ final class PlaybackController {
     private(set) var selectedAudioIndex: Int?
     /// Set when playback resumed from a saved position (shows the "Start Over" banner).
     private(set) var resumedFrom: Double?
+    /// How the sound is rendered right now, and where it goes.
+    private(set) var audioRendering: AudioRendering = .spatial
+    private(set) var outputDevice: AudioOutputDevice?
+    /// Non-nil while offering "Use Virtual Surround for <device>?".
+    private(set) var virtualSurroundOffer: AudioOutputDevice?
+    @ObservationIgnored private var routeTracker = AudioRouteTracker()
+    @ObservationIgnored private var routeObservers: [NSObjectProtocol] = []
 
     /// What was chosen for this file last time.
     struct Preferences {
@@ -87,11 +94,13 @@ final class PlaybackController {
             MainActor.assumeIsolated { self?.handle(event) }
         }
         observeVolumeUnmounts()
+        observeAudioRouting()
     }
 
     func open(startAt: Double = 0, autoplay: Bool = true) {
         wantsPlay = autoplay
         if startAt > 0 { resumedFrom = startAt }
+        updateAudioRoute()      // queued before open, so the first audio path is already right
         engine.open(startAt: startAt, autoplay: autoplay, preferredAudioStream: preferences.audioStreamIndex)
     }
 
@@ -177,9 +186,74 @@ final class PlaybackController {
         guard index != selectedAudioIndex, let track = audioTracks.first(where: { $0.index == index }) else { return }
         selectedAudioIndex = index
         engine.selectAudio(streamIndex: index)
+        updateAudioRoute()
         showToast("Audio: \(TrackLabels.menuTitle(track))")
         history?.record(identity: identity, url: url, title: url.deletingPathExtension().lastPathComponent,
                         position: engine.currentTime, duration: duration, audioStreamIndex: index)
+    }
+
+    // MARK: - Sound (Apple Spatial Audio / Virtual Surround / Stereo)
+
+    /// Changes the Sound setting (for every player) from the audio menu.
+    func setAudioMode(_ mode: AudioMode) {
+        AppSettings.shared.audioMode = mode
+        showToast(mode == .auto ? "Sound: Auto · \(audioRendering.label)" : "Sound: \(mode.label)")
+    }
+
+    /// "Use Virtual Surround" on the banner: remembered for this device.
+    func acceptVirtualSurroundOffer() {
+        guard let device = virtualSurroundOffer else { return }
+        AppSettings.shared.remember(device, virtualSurround: true)
+        showToast("Virtual Surround on for \(device.name)")
+    }
+
+    /// "No Thanks": keep Apple's processing for this device, and don't ask again.
+    func declineVirtualSurroundOffer() {
+        guard let device = virtualSurroundOffer else { return }
+        AppSettings.shared.remember(device, virtualSurround: false)
+    }
+
+    /// ✕: ask again next time Reel is launched.
+    func dismissVirtualSurroundOffer() {
+        guard let device = virtualSurroundOffer else { return }
+        AppSettings.shared.dismissOffer(for: device.uid)
+    }
+
+    private func observeAudioRouting() {
+        AudioOutputMonitor.shared.start()
+        let nc = NotificationCenter.default
+        for name in [AudioOutputMonitor.didChangeNotification, AppSettings.audioRoutingDidChange] {
+            routeObservers.append(nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateAudioRoute() }
+            })
+        }
+    }
+
+    /// Re-decides the audio path after a device, setting or track change.
+    private func updateAudioRoute() {
+        let settings = AppSettings.shared
+        let device = AudioOutputMonitor.shared.device
+        outputDevice = device
+        let channels = audioTracks.first { $0.index == selectedAudioIndex }?.audio?.channels ?? 0
+        let inputs = AudioRouteTracker.Inputs(
+            mode: settings.audioMode, device: device,
+            remembered: device.flatMap { settings.rememberedVirtualSurround(for: $0.uid) },
+            sourceChannels: channels,
+            offerDismissed: device.map { settings.dismissedOffers.contains($0.uid) } ?? false)
+        for action in routeTracker.update(inputs) {
+            switch action {
+            case .render(let rendering):
+                audioRendering = rendering
+            case .offer(let device):
+                virtualSurroundOffer = device
+            case .withdrawOffer:
+                virtualSurroundOffer = nil
+            case .announce(let message):
+                showToast(message)
+            }
+        }
+        // The engine ignores repeats; room ambience only rebuilds the Virtual Surround path.
+        engine.setAudioRendering(audioRendering, roomAmbience: settings.virtualSurroundRoom)
     }
 
     /// A key: next audio track.
@@ -280,6 +354,8 @@ final class PlaybackController {
         sleepAssertion.release()
         volumeObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         volumeObservers.removeAll()
+        routeObservers.forEach(NotificationCenter.default.removeObserver)
+        routeObservers.removeAll()
         engine.close()
     }
 
@@ -331,6 +407,7 @@ final class PlaybackController {
             selectedSubtitleID = media.defaultSubtitleID
             audioTracks = media.info.audioStreams
             selectedAudioIndex = media.audioStream?.index
+            updateAudioRoute()
             applySubtitlePreference()
             subtitleTracksChanged()
             onTransportChange?()

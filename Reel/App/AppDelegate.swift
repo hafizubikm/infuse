@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         FFmpegLogging.install()
         _ = VideoFormatFactory.registerSupplementalDecoders
+        MainActor.assumeIsolated { AudioOutputMonitor.shared.start() }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

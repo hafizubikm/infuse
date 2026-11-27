@@ -77,11 +77,13 @@ final class PlaybackEngine: @unchecked Sendable {
     private var audioPath: String?
     private var activeStreams = Set<Int>()
     private var audioStreamIndex: Int?
+    /// How multichannel audio is rendered (Apple Spatial Audio, Virtual Surround, stereo).
+    private var rendering: AudioRendering = .spatial
+    private var virtualSurroundRoom = false
 
     init(url: URL, videoLayer: AVSampleBufferDisplayLayer) {
         self.url = url
         videoRenderer = videoLayer.sampleBufferRenderer
-        audioRenderer.allowedAudioSpatializationFormats = .monoStereoAndMultichannel
         audioRenderer.audioTimePitchAlgorithm = .timeDomain
         synchronizer.addRenderer(audioRenderer)
         synchronizer.addRenderer(videoRenderer)
@@ -108,6 +110,22 @@ final class PlaybackEngine: @unchecked Sendable {
     /// Switches to another audio track (restarts the audio path at the current position).
     func selectAudio(streamIndex: Int) {
         queue.async { self.doSelectAudio(streamIndex) }
+    }
+
+    /// Changes how audio is rendered; rebuilds the audio path at the current position if a
+    /// track is playing (set before `open` to start that way).
+    func setAudioRendering(_ rendering: AudioRendering, roomAmbience: Bool = false) {
+        queue.async {
+            guard rendering != self.rendering || roomAmbience != self.virtualSurroundRoom else { return }
+            let roomOnly = rendering == self.rendering
+            self.rendering = rendering
+            self.virtualSurroundRoom = roomAmbience
+            if roomOnly && rendering != .virtualSurround { return }
+            guard !self.closed, let index = self.audioStreamIndex,
+                  let stream = self.file?.info.audioStreams.first(where: { $0.index == index }) else { return }
+            Log.audio.notice("Audio rendering → \(rendering.rawValue, privacy: .public)")
+            self.rebuildAudio(stream)
+        }
     }
 
     func play() {
@@ -243,24 +261,48 @@ final class PlaybackEngine: @unchecked Sendable {
         }
     }
 
-    /// Creates the audio feeder for `a` (its demuxer queue must exist): passthrough for formats
-    /// macOS decodes (AAC, AC-3, E-AC-3/Atmos), FFmpeg → PCM for everything else.
+    /// Creates the audio feeder for `a` (its demuxer queue must exist).
+    ///
+    /// Apple Spatial Audio: passthrough for formats macOS decodes (AAC, AC-3, E-AC-3/Atmos),
+    /// FFmpeg → multichannel PCM for everything else, spatialization allowed.
+    /// Virtual Surround / Stereo: multichannel tracks (E-AC-3 included) are decoded by FFmpeg and
+    /// rendered to stereo by Reel, with macOS spatialization off so nothing is processed twice.
     private func setUpAudio(_ a: StreamInfo) throws {
         guard let file, let demuxer, let st = file.stream(at: a.index), let packets = demuxer.queue(for: a.index) else { return }
         let par = st.pointee.codecpar.pointee
         let timing = StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime)
-        if AudioFormatFactory.supportsPassthrough(codecID: par.codec_id) {
+        let format = TrackLabels.audioFormat(a)
+        let multichannel = Int(par.ch_layout.nb_channels) > 2 || (a.audio?.channels ?? 0) > 2
+        let bed = (a.audio?.isAtmos == true || a.audio?.isDTSX == true) ? " (channel bed; objects not decoded)" : ""
+
+        var processor: AudioChannelProcessor?
+        if multichannel {
+            switch rendering {
+            case .spatial: processor = nil
+            case .virtualSurround: processor = BinauralVirtualizer(roomAmbience: virtualSurroundRoom)
+            case .stereo: processor = StereoDownmixer()
+            }
+        }
+        audioRenderer.allowedAudioSpatializationFormats = rendering == .spatial ? .monoStereoAndMultichannel : []
+        let spatialNote = rendering == .spatial ? "Apple Spatial Audio" : "no spatial processing"
+
+        if processor == nil, AudioFormatFactory.supportsPassthrough(codecID: par.codec_id) {
             let feeder = PassthroughAudioFeeder(renderer: audioRenderer, packets: packets, codecpar: par, timing: timing)
             wire(feeder)
             audioFeeder = feeder
-            audioPath = "\(TrackLabels.audioFormat(a)) · decoded by macOS · Spatial Audio allowed"
+            audioPath = "\(format) · decoded by macOS · \(spatialNote)"
         } else {
             let feeder = try PCMAudioFeeder(renderer: audioRenderer, packets: packets, stream: st,
-                                            timing: timing, label: TrackLabels.audioFormat(a))
+                                            timing: timing, label: format, processor: processor)
             wire(feeder)
             audioFeeder = feeder
-            let bed = (a.audio?.isAtmos == true || a.audio?.isDTSX == true) ? " (channel bed; objects not decoded)" : ""
-            audioPath = "\(TrackLabels.audioFormat(a)) · decoded by FFmpeg\(bed) → multichannel PCM · Spatial Audio allowed"
+            if let processor {
+                let output = processor is BinauralVirtualizer ? " → stereo" : ""
+                audioPath = "\(format) · decoded by FFmpeg\(bed) → \(processor.name)\(output)"
+            } else {
+                let pcm = multichannel ? "multichannel PCM" : "PCM"
+                audioPath = "\(format) · decoded by FFmpeg\(bed) → \(pcm) · \(spatialNote)"
+            }
         }
         audioStreamIndex = a.index
     }
@@ -268,20 +310,26 @@ final class PlaybackEngine: @unchecked Sendable {
     private func doSelectAudio(_ index: Int) {
         guard !closed, let file, let demuxer, index != audioStreamIndex,
               let stream = file.info.audioStreams.first(where: { $0.index == index }) else { return }
+        if let old = audioStreamIndex { activeStreams.remove(old) }
+        activeStreams.insert(index)
+        demuxer.setActiveStreams(activeStreams)
+        rebuildAudio(stream)
+    }
+
+    /// Replaces the audio feeder (new track or rendering) and re-buffers at the current position.
+    private func rebuildAudio(_ stream: StreamInfo) {
         let resumeAt = currentTime
         audioFeeder?.stop()
         audioFeeder = nil
         audioRenderer.flush()
-        if let old = audioStreamIndex { activeStreams.remove(old) }
-        activeStreams.insert(index)
-        demuxer.setActiveStreams(activeStreams)
         do {
             try setUpAudio(stream)
         } catch {
             emit(.warning("\(TrackLabels.audioFormat(stream)) audio can't be decoded (\(error))."))
         }
         emit(.renderPaths(video: videoPath, audio: audioPath))
-        doSeek(to: resumeAt, mode: .accurate)
+        // After the end the next play() seeks to 0 and starts the feeders anyway.
+        if !ended { doSeek(to: resumeAt, mode: .accurate) }
     }
 
     private enum VideoPath {

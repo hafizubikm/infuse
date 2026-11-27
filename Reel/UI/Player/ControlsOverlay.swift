@@ -36,12 +36,21 @@ struct ControlsOverlay: View {
                     .transition(.opacity)
             }
 
-            if let resumed = controller.resumedFrom {
-                ResumeBanner(time: resumed, startOver: controller.startOver, dismiss: controller.dismissResumeBanner)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 28).padding(.trailing, 24)
-                    .transition(.opacity)
+            VStack(alignment: .trailing, spacing: 10) {
+                if let resumed = controller.resumedFrom {
+                    ResumeBanner(time: resumed, startOver: controller.startOver, dismiss: controller.dismissResumeBanner)
+                        .transition(.opacity)
+                }
+                if let device = controller.virtualSurroundOffer {
+                    VirtualSurroundBanner(device: device, layout: currentLayout,
+                                          accept: controller.acceptVirtualSurroundOffer,
+                                          decline: controller.declineVirtualSurroundOffer,
+                                          dismiss: controller.dismissVirtualSurroundOffer)
+                        .transition(.opacity)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 28).padding(.trailing, 24)
 
             if ui.controlsVisible {
                 ControlBar(controller: controller, ui: ui)
@@ -56,6 +65,11 @@ struct ControlsOverlay: View {
             AppModel.shared.open(videos)
             return true
         }
+    }
+
+    private var currentLayout: String {
+        let track = controller.audioTracks.first { $0.index == controller.selectedAudioIndex }
+        return track?.audio?.channelLayout ?? "\(track?.audio?.channels ?? 6)-channel"
     }
 
     @ViewBuilder private var statusOverlay: some View {
@@ -183,17 +197,35 @@ private struct AudioMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(controller.audioTracks) { track in
-                Button {
-                    controller.selectAudio(track.index)
-                } label: {
-                    if track.index == controller.selectedAudioIndex {
-                        Label(TrackLabels.menuTitle(track), systemImage: "checkmark")
-                    } else {
-                        Text(TrackLabels.menuTitle(track))
+            Section("Track") {
+                ForEach(controller.audioTracks) { track in
+                    Button {
+                        controller.selectAudio(track.index)
+                    } label: {
+                        if track.index == controller.selectedAudioIndex {
+                            Label(TrackLabels.menuTitle(track), systemImage: "checkmark")
+                        } else {
+                            Text(TrackLabels.menuTitle(track))
+                        }
                     }
                 }
             }
+            Section("Sound") {
+                ForEach(AudioMode.allCases) { mode in
+                    let title = mode == .auto ? "Auto (\(controller.audioRendering.label))" : mode.label
+                    Button {
+                        controller.setAudioMode(mode)
+                    } label: {
+                        if mode == AppSettings.shared.audioMode {
+                            Label(title, systemImage: "checkmark")
+                        } else {
+                            Text(title)
+                        }
+                    }
+                }
+            }
+            Divider()
+            SettingsLink { Text("Audio Settings…") }
         } label: {
             Image(systemName: "waveform").font(.title3)
         }
@@ -287,6 +319,42 @@ private struct VolumeControl: View {
     private var icon: String {
         if controller.isMuted || controller.volume == 0 { return "speaker.slash.fill" }
         return controller.volume < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.2.fill"
+    }
+}
+
+/// "Sony WH-1000XM5: use Virtual Surround?" — shown in Auto for non-Apple headphones.
+private struct VirtualSurroundBanner: View {
+    let device: AudioOutputDevice
+    let layout: String
+    let accept: () -> Void
+    let decline: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "headphones").font(.title2).foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Use Virtual Surround for \(device.name)?")
+                    .font(.callout.weight(.semibold)).foregroundStyle(.white)
+                Text("Renders this \(layout) mix through virtual speakers around you, for headphones without Apple Spatial Audio. Reel remembers your answer for this device.")
+                    .font(.caption).foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button("Use Virtual Surround", action: accept)
+                        .buttonStyle(.borderedProminent)
+                    Button("No Thanks", action: decline)
+                }
+                .controlSize(.small)
+                .padding(.top, 2)
+            }
+            Button(action: dismiss) { Image(systemName: "xmark").font(.caption) }
+                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.7))
+                .help("Ask again next time")
+        }
+        .padding(14)
+        .frame(width: 340, alignment: .leading)
+        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 14))
+        .environment(\.colorScheme, .dark)
     }
 }
 

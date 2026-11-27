@@ -14,6 +14,8 @@ A personal, Mac-only video player in the spirit of Infuse. It plays MKV, MP4, MO
 | Dolby Vision 7 (UHD Blu-ray) | Enhancement layer and RPU removed, HDR10 base layer played; shown as "Dolby Vision Profile 7 → playing HDR10 base layer" |
 | AAC, AC-3, E-AC-3 (incl. Atmos JOC) | Passed compressed to `AVSampleBufferAudioRenderer`; macOS decodes and spatializes (head-tracked on AirPods) |
 | TrueHD, DTS / DTS-HD MA, FLAC, Opus, Vorbis, MP3, PCM … | FFmpeg-decoded Float32 PCM with a Core Audio channel layout (5.1/7.1 …) → same audio renderer, so Spatial Audio still applies. TrueHD Atmos / DTS:X play their channel bed |
+| Any 5.1/7.1 track in **Virtual Surround** | Decoded by FFmpeg (E-AC-3 too) → each channel placed on a virtual speaker (C 0°, L/R ±30°, Ls/Rs ±110°, Lrs/Rrs ±150°, LFE to both ears) → rendered for headphones with Apple's HRTF in an offline `AVAudioEngine` → stereo PCM to the same renderer, macOS spatialization off |
+| Any 5.1/7.1 track in **Stereo** | Decoded by FFmpeg → ITU-style stereo downmix, no spatial processing |
 | MPEG-2, VC-1, VP9, VP8, MPEG-4/Xvid, H.264 Hi10P … | FFmpeg decode (VideoToolbox-accelerated where available, e.g. VP9) → IOSurface NV12/P010 pixel buffers with colour/HDR attachments → same display layer. Also the automatic fallback if the hardware path rejects a stream |
 
 | Subtitles: SRT, ASS/SSA, mov_text, WebVTT, PGS, VobSub, DVB | Decoded by FFmpeg (text → ASS events, bitmaps → RGBA) and drawn by Reel on an SDR overlay above the picture, so they stay white over HDR. Sidecar `Movie.srt` / `Movie.en.forced.ass` files load automatically. **S** cycles tracks; size and background in Settings (⌘,) |
@@ -38,6 +40,20 @@ Press **I** while playing to see the stream details and the path actually in use
 | M | Mute |
 | S / A | Next subtitle / audio track |
 | I | Info overlay |
+
+### Sound
+
+Settings › Audio (⌘,) or the player's audio menu:
+
+- **Auto** (default): AirPods, Beats and the Mac's speakers get Apple Spatial Audio (head-tracked on
+  AirPods). Receivers, TVs and AirPlay get the multichannel signal. For other headphones — Bluetooth
+  ones like the Sony WH-1000XM5, the headphone jack, USB headsets — Reel offers *Virtual Surround*
+  the first time a surround track plays and remembers the answer per device.
+- **Apple Spatial Audio**, **Virtual Surround**, **Stereo**: force one for every output.
+
+Reel follows the output device live: connect AirPods mid-film and it switches back to Apple Spatial
+Audio at the same position (a short re-buffer, no drift). The info overlay (**I**) shows the mode,
+the device and the exact audio path.
 
 Media keys, AirPods controls and Control Center work through Now Playing; the control bar also has
 audio, subtitle and speed menus, Picture in Picture and full screen.

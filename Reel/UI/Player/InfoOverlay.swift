@@ -36,7 +36,8 @@ struct InfoOverlay: View {
                         row("Format", TrackLabels.audioFormat(a) + " · \(ad.sampleRate / 1000) kHz")
                         if let layout = ad.channelLayout { row("Layout", layout) }
                         if let br = Formatting.bitRate(a.bitRate) { row("Bitrate", br) }
-                        if let path = controller.audioRenderPath { row("Output", path) }
+                        if let path = controller.audioRenderPath { row("Path", path) }
+                        row("Sound", soundText)
                     }
                 }
             } else {
@@ -48,6 +49,13 @@ struct InfoOverlay: View {
         .padding(16)
         .frame(maxWidth: 520, alignment: .leading)
         .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var soundText: String {
+        let mode = AppSettings.shared.audioMode
+        var text = mode == .auto ? "Auto → \(controller.audioRendering.label)" : controller.audioRendering.label
+        if let d = controller.outputDevice { text += " · \(d.name) (\(d.transportLabel))" }
+        return text
     }
 
     private func hdrText(_ v: VideoDetails) -> String {
