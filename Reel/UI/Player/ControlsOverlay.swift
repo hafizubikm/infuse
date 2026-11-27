@@ -49,6 +49,13 @@ struct ControlsOverlay: View {
             }
         }
         .ignoresSafeArea()
+        // Drop another video onto the player to play it instead.
+        .dropDestination(for: URL.self) { urls, _ in
+            let videos = urls.filter(SupportedMedia.isVideo)
+            guard !videos.isEmpty else { return false }
+            AppModel.shared.open(videos)
+            return true
+        }
     }
 
     @ViewBuilder private var statusOverlay: some View {

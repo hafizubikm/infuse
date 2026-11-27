@@ -20,6 +20,28 @@ A personal, Mac-only video player in the spirit of Infuse. It plays MKV, MP4, MO
 
 Press **I** while playing to see the stream details and the path actually in use.
 
+## Using Reel
+
+- **Library:** add folders (⇧⌘O or the sidebar's *Add Folder…*); external drives are remembered and
+  show greyed out while disconnected. Continue Watching and Recently Played come from your history.
+- **Opening:** double-click in the library, drop files on any window or the Dock icon, ⌘O, or
+  *Open With › Reel* / double-click in Finder.
+- **Resume:** Reel resumes where you stopped (with the audio/subtitle tracks you picked); the banner
+  offers *Start Over*.
+
+| Key | Action |
+| --- | --- |
+| Space | Play / pause |
+| ← / → | Back / forward 10 s (⇧ for 60 s) |
+| ↑ / ↓ | Volume |
+| F / Esc | Full screen / exit full screen |
+| M | Mute |
+| S / A | Next subtitle / audio track |
+| I | Info overlay |
+
+Media keys, AirPods controls and Control Center work through Now Playing; the control bar also has
+audio, subtitle and speed menus, Picture in Picture and full screen.
+
 ## Requirements
 
 - Apple Silicon Mac, macOS 14 or later

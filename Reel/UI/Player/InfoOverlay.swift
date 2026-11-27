@@ -29,7 +29,8 @@ struct InfoOverlay: View {
                         if let path = controller.videoRenderPath { row("Rendering", path) }
                     }
                 }
-                if let a = media.audioStream, let ad = a.audio {
+                if let a = media.info.audioStreams.first(where: { $0.index == controller.selectedAudioIndex }) ?? media.audioStream,
+                   let ad = a.audio {
                     section("Audio") {
                         row("Track", TrackLabels.menuTitle(a))
                         row("Format", TrackLabels.audioFormat(a) + " · \(ad.sampleRate / 1000) kHz")
