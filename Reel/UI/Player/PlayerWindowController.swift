@@ -10,20 +10,24 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     let controller: PlaybackController
     let ui = PlayerUIState()
     private var keyMonitor: Any?
+    private var nowPlaying: NowPlaying?
+    private var pictureInPicture: PictureInPicture?
+    private var nowPlayingTimer: Timer?
 
-    static func open(_ url: URL, startAt: Double = 0) {
+    static func open(_ url: URL, startAt: Double = 0, history: PlaybackHistory? = nil,
+                     preferences: PlaybackController.Preferences = .init()) {
         if let existing = current {
             existing.window?.close()   // windowWillClose tears the old one down
         }
-        let wc = PlayerWindowController(url: url)
+        let wc = PlayerWindowController(url: url, history: history, preferences: preferences)
         current = wc
         wc.showWindow(nil)
         wc.window?.makeKeyAndOrderFront(nil)
         wc.controller.open(startAt: startAt, autoplay: true)
     }
 
-    init(url: URL) {
-        controller = PlaybackController(url: url)
+    init(url: URL, history: PlaybackHistory?, preferences: PlaybackController.Preferences) {
+        controller = PlaybackController(url: url, history: history, preferences: preferences)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let size = NSSize(width: min(1280, screen.width * 0.7), height: min(720, screen.height * 0.7))
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
@@ -47,6 +51,21 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         ui.toggleFullScreen = { [weak window] in window?.toggleFullScreen(nil) }
         controller.onOpened = { [weak self] media in self?.fit(to: media.displaySize) }
         installKeyMonitor()
+
+        let nowPlaying = NowPlaying(controller: controller)
+        self.nowPlaying = nowPlaying
+        let pip = PictureInPicture(controller: controller)
+        pictureInPicture = pip
+        ui.pictureInPictureSupported = PictureInPicture.isSupported
+        ui.togglePictureInPicture = { [weak pip] in pip?.toggle() }
+        controller.onTransportChange = { [weak nowPlaying, weak pip] in
+            nowPlaying?.update()
+            pip?.invalidate()
+        }
+        // Keep the Now Playing position fresh (the system extrapolates in between).
+        nowPlayingTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak nowPlaying] _ in
+            MainActor.assumeIsolated { nowPlaying?.update() }
+        }
     }
 
     @available(*, unavailable)
@@ -81,7 +100,10 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         (window?.contentView as? PlayerView)?.tearDown()
+        nowPlayingTimer?.invalidate()
+        nowPlaying?.tearDown()
         controller.close()
+        AppModel.shared.historyChanged()
         if Self.current === self { Self.current = nil }
     }
 

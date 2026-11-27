@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
+#endif
 
 /// The file types Reel opens, by extension.
 enum SupportedMedia {
@@ -18,6 +20,7 @@ enum SupportedMedia {
         videoExtensions.contains(url.pathExtension.lowercased())
     }
 
+    #if canImport(UniformTypeIdentifiers)
     /// Content types for NSOpenPanel. Unknown extensions (e.g. mkv on a system without a
     /// Matroska UTI) still get a dynamic type, so the panel accepts them.
     static var openPanelTypes: [UTType] {
@@ -27,4 +30,5 @@ enum SupportedMedia {
         }
         return types
     }
+    #endif
 }

@@ -2,7 +2,7 @@ import AppKit
 
 /// Player keyboard shortcuts.
 ///   Space play/pause · ←/→ ±10 s · ⇧←/→ ±60 s · ↑/↓ volume · F full screen · M mute · Esc exit full screen
-///   I info overlay · S cycle subtitles · (A audio arrives with milestone 6.)
+///   I info overlay · S cycle subtitles · A cycle audio tracks
 @MainActor
 enum KeyCommands {
     static func handle(_ event: NSEvent, controller: PlaybackController, ui: PlayerUIState, window: NSWindow?) -> Bool {
@@ -31,6 +31,7 @@ enum KeyCommands {
             case "m": controller.setMuted(!controller.isMuted)
             case "i": ui.showInfo.toggle()
             case "s": controller.cycleSubtitles()
+            case "a": controller.cycleAudio()
             default: return false
             }
         }

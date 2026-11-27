@@ -135,6 +135,8 @@ final class PlayerUIState {
     /// True while the pointer is over the control bar (keeps it from hiding).
     var isInteracting = false
     var showInfo = false
+    var pictureInPictureSupported = false
     @ObservationIgnored var onActivity: (() -> Void)?
     @ObservationIgnored var toggleFullScreen: (() -> Void)?
+    @ObservationIgnored var togglePictureInPicture: (() -> Void)?
 }

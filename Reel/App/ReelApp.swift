@@ -5,14 +5,16 @@ struct ReelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("Reel", id: "main") {
-            StreamInspectorView(model: AppModel.shared)
-                .frame(minWidth: 560, minHeight: 420)
+        Window("Reel", id: "library") {
+            LibraryView(model: AppModel.shared)
+                .frame(minWidth: 720, minHeight: 440)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { AppModel.shared.presentOpenPanel() }
                     .keyboardShortcut("o")
+                Button("Add Folder to Library…") { LibraryStore.shared.presentAddFolderPanel() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
 

@@ -159,6 +159,11 @@ ASS
   "$OUT/h264_movtext.mp4"
 cp "$TMP/subs.srt" "$OUT/h264_aac.srt"
 
+echo "==> Two audio tracks (English AAC + French AC-3) for track switching"
+"${FF[@]}" -i "$OUT/h264_aac.mp4" -i "$OUT/h264_ac3.ts" -map 0:v -map 0:a -map 1:a -c copy \
+  -metadata:s:a:0 language=eng -metadata:s:a:1 language=fre -disposition:a:0 default -disposition:a:1 0 \
+  "$OUT/h264_two_audio.mkv"
+
 echo "==> VobSub bitmap subtitles (scripts/make-vobsub.c, needs FFmpeg dev libraries via pkg-config)"
 cc -o "$TMP/make-vobsub" "$ROOT/scripts/make-vobsub.c" $(pkg-config --cflags --libs libavformat libavcodec libavutil)
 "$TMP/make-vobsub" "$OUT/vobsub.mkv"

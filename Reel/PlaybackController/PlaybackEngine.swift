@@ -75,6 +75,8 @@ final class PlaybackEngine: @unchecked Sendable {
     private var videoFailed = false
     private var videoPath: String?
     private var audioPath: String?
+    private var activeStreams = Set<Int>()
+    private var audioStreamIndex: Int?
 
     init(url: URL, videoLayer: AVSampleBufferDisplayLayer) {
         self.url = url
@@ -98,8 +100,14 @@ final class PlaybackEngine: @unchecked Sendable {
 
     // MARK: - Commands (thread-safe)
 
-    func open(startAt: Double, autoplay: Bool) {
-        queue.async { self.doOpen(startAt: startAt, autoplay: autoplay) }
+    /// - Parameter preferredAudioStream: the audio stream chosen for this file last time.
+    func open(startAt: Double, autoplay: Bool, preferredAudioStream: Int? = nil) {
+        queue.async { self.doOpen(startAt: startAt, autoplay: autoplay, preferredAudioStream: preferredAudioStream) }
+    }
+
+    /// Switches to another audio track (restarts the audio path at the current position).
+    func selectAudio(streamIndex: Int) {
+        queue.async { self.doSelectAudio(streamIndex) }
     }
 
     func play() {
@@ -141,7 +149,7 @@ final class PlaybackEngine: @unchecked Sendable {
 
     // MARK: - Open
 
-    private func doOpen(startAt: Double, autoplay: Bool) {
+    private func doOpen(startAt: Double, autoplay: Bool, preferredAudioStream: Int?) {
         do {
             let file = try MediaFile(url: url, useCustomIO: true)
             self.file = file
@@ -151,7 +159,8 @@ final class PlaybackEngine: @unchecked Sendable {
             isMatroska = info.formatName.hasPrefix("matroska")
 
             let videoStream = TrackSelector.video(in: info)
-            let audioStream = TrackSelector.audio(in: info)
+            let audioStream = preferredAudioStream.flatMap { p in info.audioStreams.first { $0.index == p } }
+                ?? TrackSelector.audio(in: info)
             var active = Set<Int>()
             let demuxer = Demuxer(file: file)
             self.demuxer = demuxer
@@ -186,35 +195,21 @@ final class PlaybackEngine: @unchecked Sendable {
                 }
             }
 
-            if let a = audioStream, let st = file.stream(at: a.index) {
-                let par = st.pointee.codecpar.pointee
+            if let a = audioStream {
                 active.insert(a.index)
                 demuxer.setActiveStreams(active)
-                let timing = StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime)
-                let packets = demuxer.queue(for: a.index)!
-                if AudioFormatFactory.supportsPassthrough(codecID: par.codec_id) {
-                    let feeder = PassthroughAudioFeeder(renderer: audioRenderer, packets: packets, codecpar: par, timing: timing)
-                    wire(feeder)
-                    audioFeeder = feeder
-                    audioPath = "\(TrackLabels.audioFormat(a)) · decoded by macOS · Spatial Audio allowed"
-                } else {
-                    do {
-                        let feeder = try PCMAudioFeeder(renderer: audioRenderer, packets: packets, stream: st,
-                                                        timing: timing, label: TrackLabels.audioFormat(a))
-                        wire(feeder)
-                        audioFeeder = feeder
-                        let bed = (a.audio?.isAtmos == true || a.audio?.isDTSX == true) ? " (channel bed; objects not decoded)" : ""
-                        audioPath = "\(TrackLabels.audioFormat(a)) · decoded by FFmpeg\(bed) → multichannel PCM · Spatial Audio allowed"
-                    } catch {
-                        active.remove(a.index)
-                        emit(.warning("\(TrackLabels.audioFormat(a)) audio can't be decoded (\(error)); playing without sound."))
-                    }
+                do {
+                    try setUpAudio(a)
+                } catch {
+                    active.remove(a.index)
+                    emit(.warning("\(TrackLabels.audioFormat(a)) audio can't be decoded (\(error)); playing without sound."))
                 }
             }
             // Every subtitle stream is demuxed and decoded, so switching tracks is instant.
             let subtitles = SubtitleManager(file: file)
             active.formUnion(subtitles.embeddedStreamIndices)
             demuxer.setActiveStreams(active)
+            activeStreams = active
             subtitles.attach(demuxer)
             subtitles.loadExternal(for: url)
             let defaultSubtitle = SubtitleSelector.defaultTrack(subtitles.tracks, audioLanguage: audioStream?.language)
@@ -246,6 +241,47 @@ final class PlaybackEngine: @unchecked Sendable {
         } catch {
             emit(.failed(String(describing: error)))
         }
+    }
+
+    /// Creates the audio feeder for `a` (its demuxer queue must exist): passthrough for formats
+    /// macOS decodes (AAC, AC-3, E-AC-3/Atmos), FFmpeg → PCM for everything else.
+    private func setUpAudio(_ a: StreamInfo) throws {
+        guard let file, let demuxer, let st = file.stream(at: a.index), let packets = demuxer.queue(for: a.index) else { return }
+        let par = st.pointee.codecpar.pointee
+        let timing = StreamTimeConverter(timeBase: st.pointee.time_base, startTime: file.startTime)
+        if AudioFormatFactory.supportsPassthrough(codecID: par.codec_id) {
+            let feeder = PassthroughAudioFeeder(renderer: audioRenderer, packets: packets, codecpar: par, timing: timing)
+            wire(feeder)
+            audioFeeder = feeder
+            audioPath = "\(TrackLabels.audioFormat(a)) · decoded by macOS · Spatial Audio allowed"
+        } else {
+            let feeder = try PCMAudioFeeder(renderer: audioRenderer, packets: packets, stream: st,
+                                            timing: timing, label: TrackLabels.audioFormat(a))
+            wire(feeder)
+            audioFeeder = feeder
+            let bed = (a.audio?.isAtmos == true || a.audio?.isDTSX == true) ? " (channel bed; objects not decoded)" : ""
+            audioPath = "\(TrackLabels.audioFormat(a)) · decoded by FFmpeg\(bed) → multichannel PCM · Spatial Audio allowed"
+        }
+        audioStreamIndex = a.index
+    }
+
+    private func doSelectAudio(_ index: Int) {
+        guard !closed, let file, let demuxer, index != audioStreamIndex,
+              let stream = file.info.audioStreams.first(where: { $0.index == index }) else { return }
+        let resumeAt = currentTime
+        audioFeeder?.stop()
+        audioFeeder = nil
+        audioRenderer.flush()
+        if let old = audioStreamIndex { activeStreams.remove(old) }
+        activeStreams.insert(index)
+        demuxer.setActiveStreams(activeStreams)
+        do {
+            try setUpAudio(stream)
+        } catch {
+            emit(.warning("\(TrackLabels.audioFormat(stream)) audio can't be decoded (\(error))."))
+        }
+        emit(.renderPaths(video: videoPath, audio: audioPath))
+        doSeek(to: resumeAt, mode: .accurate)
     }
 
     private enum VideoPath {

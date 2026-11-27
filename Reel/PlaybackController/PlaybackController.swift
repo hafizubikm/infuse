@@ -38,6 +38,25 @@ final class PlaybackController {
     private(set) var toast: String?
     @ObservationIgnored private(set) var subtitles: SubtitleManager?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
+    /// Audio tracks of the file and the one playing.
+    private(set) var audioTracks: [StreamInfo] = []
+    private(set) var selectedAudioIndex: Int?
+    /// Set when playback resumed from a saved position (shows the "Start Over" banner).
+    private(set) var resumedFrom: Double?
+
+    /// What was chosen for this file last time.
+    struct Preferences {
+        var audioStreamIndex: Int?
+        var subtitleTrackID: String?
+        var subtitlesOff = false
+    }
+
+    let identity: FileIdentity
+    @ObservationIgnored private let history: PlaybackHistory?
+    @ObservationIgnored private let preferences: Preferences
+    @ObservationIgnored private var lastRecorded: Double = -100
+    /// Called whenever transport state changes (play/pause/seek/rate/end) — for Now Playing and PiP.
+    @ObservationIgnored var onTransportChange: (() -> Void)?
 
     /// Called once the file is open (e.g. so the window can size itself to the video).
     var onOpened: ((PlaybackEngine.OpenedMedia) -> Void)?
@@ -54,8 +73,11 @@ final class PlaybackController {
     var preciseTime: Double { scrubPosition ?? engine.currentTime }
     var displayedTime: Double { scrubPosition ?? currentTime }
 
-    init(url: URL) {
+    init(url: URL, history: PlaybackHistory? = nil, preferences: Preferences = Preferences()) {
         self.url = url
+        identity = FileIdentity(url: url)
+        self.history = history
+        self.preferences = preferences
         let layer = AVSampleBufferDisplayLayer()
         layer.videoGravity = .resizeAspect
         layer.backgroundColor = CGColor(gray: 0, alpha: 1)
@@ -69,8 +91,17 @@ final class PlaybackController {
 
     func open(startAt: Double = 0, autoplay: Bool = true) {
         wantsPlay = autoplay
-        engine.open(startAt: startAt, autoplay: autoplay)
+        if startAt > 0 { resumedFrom = startAt }
+        engine.open(startAt: startAt, autoplay: autoplay, preferredAudioStream: preferences.audioStreamIndex)
     }
+
+    /// "Start Over" after an automatic resume.
+    func startOver() {
+        resumedFrom = nil
+        seek(to: 0)
+    }
+
+    func dismissResumeBanner() { resumedFrom = nil }
 
     // MARK: - Transport
 
@@ -80,6 +111,7 @@ final class PlaybackController {
         engine.play()
         status = .playing
         updateSleepAssertion()
+        onTransportChange?()
     }
 
     func pause() {
@@ -88,6 +120,8 @@ final class PlaybackController {
         engine.pause()
         status = .paused
         updateSleepAssertion()
+        recordProgress()
+        onTransportChange?()
     }
 
     func togglePlayPause() {
@@ -100,6 +134,7 @@ final class PlaybackController {
         currentTime = t
         if status == .ended { status = .paused }
         engine.seek(to: t, mode: .accurate)
+        onTransportChange?()
     }
 
     func skip(by delta: Double) {
@@ -126,6 +161,47 @@ final class PlaybackController {
     func setSpeed(_ value: Float) {
         speed = value
         engine.setSpeed(value)
+        showToast("Speed \(Self.speedLabel(value))")
+        onTransportChange?()
+    }
+
+    static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+
+    static func speedLabel(_ v: Float) -> String {
+        v == v.rounded() ? "\(Int(v))×" : String(format: "%g×", v)
+    }
+
+    // MARK: - Audio tracks
+
+    func selectAudio(_ index: Int) {
+        guard index != selectedAudioIndex, let track = audioTracks.first(where: { $0.index == index }) else { return }
+        selectedAudioIndex = index
+        engine.selectAudio(streamIndex: index)
+        showToast("Audio: \(TrackLabels.menuTitle(track))")
+        history?.record(identity: identity, url: url, title: url.deletingPathExtension().lastPathComponent,
+                        position: engine.currentTime, duration: duration, audioStreamIndex: index)
+    }
+
+    /// A key: next audio track.
+    func cycleAudio() {
+        guard audioTracks.count > 1 else {
+            if let only = audioTracks.first { showToast("Audio: \(TrackLabels.menuTitle(only))") }
+            return
+        }
+        let i = audioTracks.firstIndex { $0.index == selectedAudioIndex } ?? -1
+        selectAudio(audioTracks[(i + 1) % audioTracks.count].index)
+    }
+
+    // MARK: - History
+
+    /// Saves the resume point (every 10 s of playback, and on pause / close / end).
+    private func recordProgress(force: Bool = false) {
+        guard let history, duration > 0, status != .opening else { return }
+        let t = status == .ended ? duration : engine.currentTime
+        guard force || abs(t - lastRecorded) >= 10 || status != .playing else { return }
+        lastRecorded = t
+        history.record(identity: identity, url: url, title: url.deletingPathExtension().lastPathComponent,
+                       position: t, duration: duration)
     }
 
     func setVolume(_ value: Float) {
@@ -143,10 +219,29 @@ final class PlaybackController {
 
     @ObservationIgnored private var userChoseSubtitles = false
 
+    /// Re-applies the subtitle choice made for this file last time.
+    private func applySubtitlePreference() {
+        if preferences.subtitlesOff {
+            userChoseSubtitles = true
+            selectedSubtitleID = nil
+            subtitles?.select(nil)
+        } else if let id = preferences.subtitleTrackID, subtitleTracks.contains(where: { $0.id == id }) {
+            userChoseSubtitles = true
+            selectedSubtitleID = id
+            subtitles?.select(id)
+        }
+    }
+
     /// External files load in the background. One placed next to the video is shown
     /// automatically unless something else was already selected.
     private func subtitleTracksChanged() {
         subtitleTracks = subtitles?.tracks ?? []
+        // A remembered external track can only be applied once its file has loaded.
+        if !userChoseSubtitles, !preferences.subtitlesOff, let id = preferences.subtitleTrackID,
+           subtitleTracks.contains(where: { $0.id == id }) {
+            applySubtitlePreference()
+            return
+        }
         if selectedSubtitleID == nil, !userChoseSubtitles, let external = subtitleTracks.first(where: \.isExternal) {
             selectedSubtitleID = external.id
             subtitles?.select(external.id)
@@ -155,6 +250,8 @@ final class PlaybackController {
 
     func selectSubtitle(_ id: String?) {
         userChoseSubtitles = true
+        history?.record(identity: identity, url: url, title: url.deletingPathExtension().lastPathComponent,
+                        position: engine.currentTime, duration: duration, subtitleTrackID: .some(id))
         selectedSubtitleID = id
         subtitles?.select(id)
         let title = subtitleTracks.first { $0.id == id }?.menuTitle
@@ -178,6 +275,8 @@ final class PlaybackController {
     }
 
     func close() {
+        recordProgress(force: true)
+        history?.saveNow()
         sleepAssertion.release()
         volumeObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         volumeObservers.removeAll()
@@ -230,7 +329,11 @@ final class PlaybackController {
             }
             subtitleTracks = media.subtitles.tracks
             selectedSubtitleID = media.defaultSubtitleID
+            audioTracks = media.info.audioStreams
+            selectedAudioIndex = media.audioStream?.index
+            applySubtitlePreference()
             subtitleTracksChanged()
+            onTransportChange?()
             status = wantsPlay ? .playing : .paused
             updateSleepAssertion()
             onOpened?(media)
@@ -238,12 +341,16 @@ final class PlaybackController {
             isBuffering = buffering
         case .time(let t):
             if scrubPosition == nil { currentTime = min(t, duration > 0 ? duration : t) }
+            if status == .playing { recordProgress() }
+            if let r = resumedFrom, t > r + 8 { resumedFrom = nil }
         case .seekCompleted:
             break
         case .ended:
             currentTime = duration
             status = .ended
             updateSleepAssertion()
+            recordProgress(force: true)
+            onTransportChange?()
         case .failed(let message):
             status = .failed(message)
             isBuffering = false

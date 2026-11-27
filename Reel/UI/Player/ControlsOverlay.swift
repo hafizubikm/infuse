@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Minimal, auto-hiding player controls: play/pause, seek bar with times, full screen.
+/// Minimal, auto-hiding player controls: transport, seek bar, track/speed menus, volume, PiP,
+/// full screen, plus the resume banner, toasts and the info overlay.
 struct ControlsOverlay: View {
     let controller: PlaybackController
     let ui: PlayerUIState
@@ -32,6 +33,13 @@ struct ControlsOverlay: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.top, 40).padding(.leading, 24)
                     .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
+            if let resumed = controller.resumedFrom {
+                ResumeBanner(time: resumed, startOver: controller.startOver, dismiss: controller.dismissResumeBanner)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, 28).padding(.trailing, 24)
                     .transition(.opacity)
             }
 
@@ -86,10 +94,24 @@ private struct ControlBar: View {
                 Text("-" + Formatting.time(max(0, controller.duration - controller.displayedTime)))
                     .monospacedDigit().font(.callout).foregroundStyle(.secondary)
 
+                AudioMenu(controller: controller)
+                SubtitleMenu(controller: controller)
+                SpeedMenu(controller: controller)
+                VolumeControl(controller: controller)
+
+                if ui.pictureInPictureSupported {
+                    Button { ui.togglePictureInPicture?() } label: {
+                        Image(systemName: "pip.enter").font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Picture in Picture")
+                }
+
                 Button { ui.toggleFullScreen?() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right").font(.title3)
                 }
                 .buttonStyle(.plain)
+                .help("Full Screen (F)")
             }
         }
         .foregroundStyle(.white)
@@ -99,7 +121,7 @@ private struct ControlBar: View {
         .environment(\.colorScheme, .dark)
         .padding(.horizontal, 24)
         .padding(.bottom, 20)
-        .frame(maxWidth: 960)
+        .frame(maxWidth: 1100)
         .onHover { ui.isInteracting = $0 }
     }
 }
@@ -144,5 +166,140 @@ struct SeekBar: View {
 
     private func time(at x: CGFloat, width: CGFloat) -> Double {
         Double(min(max(0, x / width), 1)) * controller.duration
+    }
+}
+
+// MARK: - Menus and small controls
+
+private struct AudioMenu: View {
+    let controller: PlaybackController
+
+    var body: some View {
+        Menu {
+            ForEach(controller.audioTracks) { track in
+                Button {
+                    controller.selectAudio(track.index)
+                } label: {
+                    if track.index == controller.selectedAudioIndex {
+                        Label(TrackLabels.menuTitle(track), systemImage: "checkmark")
+                    } else {
+                        Text(TrackLabels.menuTitle(track))
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "waveform").font(.title3)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(controller.audioTracks.isEmpty)
+        .help("Audio (A)")
+    }
+}
+
+private struct SubtitleMenu: View {
+    let controller: PlaybackController
+
+    var body: some View {
+        Menu {
+            Button {
+                controller.selectSubtitle(nil)
+            } label: {
+                if controller.selectedSubtitleID == nil { Label("Off", systemImage: "checkmark") } else { Text("Off") }
+            }
+            Divider()
+            ForEach(controller.subtitleTracks) { track in
+                Button {
+                    controller.selectSubtitle(track.id)
+                } label: {
+                    if track.id == controller.selectedSubtitleID {
+                        Label(track.menuTitle, systemImage: "checkmark")
+                    } else {
+                        Text(track.menuTitle)
+                    }
+                }
+            }
+            Divider()
+            SettingsLink { Text("Subtitle Style…") }
+        } label: {
+            Image(systemName: controller.selectedSubtitleID == nil ? "captions.bubble" : "captions.bubble.fill")
+                .font(.title3)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Subtitles (S)")
+    }
+}
+
+private struct SpeedMenu: View {
+    let controller: PlaybackController
+
+    var body: some View {
+        Menu {
+            ForEach(PlaybackController.speeds, id: \.self) { speed in
+                Button {
+                    controller.setSpeed(speed)
+                } label: {
+                    if speed == controller.speed {
+                        Label(PlaybackController.speedLabel(speed), systemImage: "checkmark")
+                    } else {
+                        Text(PlaybackController.speedLabel(speed))
+                    }
+                }
+            }
+        } label: {
+            Text(PlaybackController.speedLabel(controller.speed))
+                .font(.callout.weight(.semibold)).monospacedDigit()
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Playback speed")
+    }
+}
+
+private struct VolumeControl: View {
+    let controller: PlaybackController
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { controller.setMuted(!controller.isMuted) } label: {
+                Image(systemName: icon).font(.callout).frame(width: 20)
+            }
+            .buttonStyle(.plain)
+            .help("Mute (M)")
+            Slider(value: Binding(get: { Double(controller.volume) },
+                                  set: { controller.setVolume(Float($0)) }), in: 0...1)
+                .frame(width: 80)
+                .controlSize(.mini)
+        }
+    }
+
+    private var icon: String {
+        if controller.isMuted || controller.volume == 0 { return "speaker.slash.fill" }
+        return controller.volume < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.2.fill"
+    }
+}
+
+private struct ResumeBanner: View {
+    let time: Double
+    let startOver: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Resumed at \(Formatting.time(time))")
+                .font(.callout).foregroundStyle(.white)
+            Button("Start Over", action: startOver)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            Button(action: dismiss) { Image(systemName: "xmark").font(.caption) }
+                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.7))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(.black.opacity(0.7), in: Capsule())
+        .environment(\.colorScheme, .dark)
     }
 }

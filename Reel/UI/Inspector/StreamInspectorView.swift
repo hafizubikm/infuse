@@ -1,40 +1,39 @@
 import SwiftUI
 
-/// Milestone 1 window: drop or open a file and see what FFmpeg found in it.
-/// (Becomes a debug view once the player exists.)
-struct StreamInspectorView: View {
+/// "Get Info" sheet: what FFmpeg found in a file.
+struct StreamInspectorSheet: View {
     let model: AppModel
 
     var body: some View {
-        Group {
-            switch model.inspector {
-            case .empty:
-                ContentUnavailableView {
-                    Label("Drop a video here", systemImage: "film")
-                } description: {
-                    Text("Or choose File › Open… (⌘O)")
+        VStack(spacing: 0) {
+            Group {
+                switch model.inspector {
+                case .loading(let url)?:
+                    ProgressView("Reading \(url.lastPathComponent)…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .failed(let url, let message)?:
+                    ContentUnavailableView {
+                        Label("Can't read \(url.lastPathComponent)", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(message).textSelection(.enabled)
+                    }
+                case .loaded(let info)?:
+                    MediaInfoList(info: info)
+                case nil:
+                    EmptyView()
                 }
-            case .loading(let url):
-                ProgressView("Reading \(url.lastPathComponent)…")
-            case .failed(let url, let message):
-                ContentUnavailableView {
-                    Label("Can't read \(url.lastPathComponent)", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(message).textSelection(.enabled)
-                }
-            case .loaded(let info):
-                MediaInfoList(info: info)
             }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { model.inspector = nil }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .dropDestination(for: URL.self) { urls, _ in
-            model.open(urls)
-            return !urls.isEmpty
-        }
+        .frame(width: 560, height: 520)
     }
 }
 
-private struct MediaInfoList: View {
+struct MediaInfoList: View {
     let info: MediaInfo
 
     var body: some View {
