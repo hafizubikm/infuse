@@ -122,14 +122,20 @@ log "Merging static libraries"
 LIBS=(libavformat libavcodec libswscale libswresample libavutil)
 LIB_PATHS=()
 for l in "${LIBS[@]}"; do LIB_PATHS+=("$PREFIX/lib/$l.a"); done
-xcrun libtool -static -no_warning_for_no_symbols -o "$WORK/libFFmpeg.a" "${LIB_PATHS[@]}"
+# (libtool warns about object files with the same name in different libraries; that is harmless.)
+xcrun libtool -static -no_warning_for_no_symbols -o "$WORK/libFFmpeg.a" "${LIB_PATHS[@]}" 2>"$WORK/libtool.log"
 
 log "Creating FFmpeg.xcframework"
 rm -rf "$XCFRAMEWORK"
-xcodebuild -create-xcframework \
+if ! xcodebuild -create-xcframework \
   -library "$WORK/libFFmpeg.a" \
   -headers "$PREFIX/include" \
-  -output "$XCFRAMEWORK" >/dev/null
+  -output "$XCFRAMEWORK" >"$WORK/xcframework.log" 2>&1; then
+  cat "$WORK/xcframework.log"
+  xcrun lipo -info "$WORK/libFFmpeg.a" || true
+  xcrun otool -l "$WORK/libFFmpeg.a" | grep -A4 -m3 -E "LC_BUILD_VERSION|LC_VERSION_MIN" || true
+  fail "xcodebuild -create-xcframework failed"
+fi
 
 cp "$SRC/COPYING.LGPLv2.1" "$OUT/LICENSE.LGPLv2.1"
 
